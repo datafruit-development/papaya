@@ -145,6 +145,111 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# def main():
+#     """
+#     Main function for the papaya command-line tool.
+#     Currently patches FastAPI and runs uvicorn.
+#     """
+
+#     print("at main")
+#     if len(sys.argv) < 2:
+#         print("Usage: papaya <command> [options]")
+#         print("Example: papaya uvicorn myapp:app --host 0.0.0.0 --port 8000")
+#         sys.exit(1)
+
+#     # Sets the environment variable to enable patching (if needed by the patch)
+#     os.environ["PAPAYA_PATCH_FASTAPI"] = "1"
+
+#     # Log the command being executed
+#     logger.info("Running command: %s", " ".join(sys.argv)) # Log the whole command including 'papaya'
+
+#     # For now, only allow the 'uvicorn' command
+#     if sys.argv[1] != "uvicorn":
+#         print(f"Error: Command '{sys.argv[1]}' not allowed.")
+#         print("Currently, only 'uvicorn' is supported.")
+#         print("Example: papaya uvicorn myapp:app --host 0.0.0.0 --port 8000")
+#         sys.exit(1) # Exit with error for invalid command
+
+#     # Check if there's at least an app location provided after 'uvicorn'
+#     if len(sys.argv) < 3:
+#         print("Error: Missing application location.")
+#         print("Example: papaya uvicorn myapp:app")
+#         sys.exit(1)
+
+#     # Import and apply the patch
+#     try:
+#         from papaya.wrappers import wrap_fastapi # Assuming papaya.patch exists
+#         wrap_fastapi()
+#         logger.info("fastapi patched successfully by papaya.")
+#     except ImportError:
+#         logger.warning("Could not import papaya.patch.patch_fastapi. Skipping patching.")
+#     except Exception as e:
+#         logger.error(f"Error applying patch: {e}")
+#         # Decide if you want to exit or continue without patching
+#         # sys.exit(1)
+
+#     try:
+#         import uvicorn
+
+#         # The application location (e.g., "myapp:app") is the first argument after 'uvicorn'
+#         app_loc = sys.argv[2]
+
+#         # Parse remaining arguments for uvicorn.run()
+#         # Note: uvicorn.run() primarily uses specific keyword arguments.
+#         # Passing arbitrary command-line flags directly might not work as expected
+#         # compared to running uvicorn from the command line itself.
+#         # This parser handles --key value and --flag patterns.
+#         kwargs = {}
+#         i = 3 # Start parsing from the argument after app_loc
+#         while i < len(sys.argv):
+#             arg = sys.argv[i]
+#             if arg.startswith('--'):
+#                 key = arg[2:].replace('-', '_') # Convert --some-flag to some_flag
+
+#                 # Check if it's a flag (no value follows or next arg is also a flag)
+#                 if i + 1 >= len(sys.argv) or sys.argv[i + 1].startswith('-'):
+#                     kwargs[key] = True
+#                     i += 1
+#                 # Otherwise, assume it's a key-value pair
+#                 else:
+#                     value_str = sys.argv[i + 1]
+#                     # Attempt basic type conversions
+#                     try:
+#                         # Try int first
+#                         value = int(value_str)
+#                     except ValueError:
+#                         # Try boolean
+#                         if value_str.lower() == 'true':
+#                             value = True
+#                         elif value_str.lower() == 'false':
+#                             value = False
+#                         else:
+#                             # Keep as string if not int or bool
+#                             value = value_str
+
+#                     kwargs[key] = value
+#                     i += 2 # Move past both key and value
+#             else:
+#                 # Handle positional arguments if necessary, or log warning/error
+#                 logger.warning(f"Ignoring non-flag argument: {arg}")
+#                 i += 1
+
+#         logger.info(f"Running uvicorn for '{app_loc}' with arguments: {kwargs}")
+
+#         # Run uvicorn programmatically
+#         # Common arguments for uvicorn.run: host, port, log_level, reload, workers, etc.
+#         uvicorn.run(app_loc, **kwargs)
+
+#     except ImportError:
+#         logger.error("Fatal: Could not import uvicorn. Please install it: pip install uvicorn")
+#         sys.exit(1)
+#     except Exception as e:
+#         logger.error(f"Fatal: Error running uvicorn directly: {e}")
+#         # Consider printing traceback for debugging
+#         # import traceback
+#         # traceback.print_exc()
+#         sys.exit(1)
+
 def main():
     """
     Main function for the papaya command-line tool.
@@ -161,7 +266,8 @@ def main():
     os.environ["PAPAYA_PATCH_FASTAPI"] = "1"
 
     # Log the command being executed
-    logger.info("Running command: %s", " ".join(sys.argv)) # Log the whole command including 'papaya'
+    # Use sys.argv[1:] to exclude 'papaya' itself if desired, or keep as is
+    logger.info("Running command: %s", " ".join(sys.argv))
 
     # For now, only allow the 'uvicorn' command
     if sys.argv[1] != "uvicorn":
@@ -178,11 +284,13 @@ def main():
 
     # Import and apply the patch
     try:
-        from papaya.wrappers import wrap_fastapi # Assuming papaya.patch exists
+        # Corrected import path based on your structure
+        from papaya.wrappers import wrap_fastapi
         wrap_fastapi()
         logger.info("fastapi patched successfully by papaya.")
     except ImportError:
-        logger.warning("Could not import papaya.patch.patch_fastapi. Skipping patching.")
+        # Log the actual error during import failure for better debugging
+        logger.exception("Could not import papaya.wrappers.wrap_fastapi. Skipping patching.")
     except Exception as e:
         logger.error(f"Error applying patch: {e}")
         # Decide if you want to exit or continue without patching
@@ -195,61 +303,63 @@ def main():
         app_loc = sys.argv[2]
 
         # Parse remaining arguments for uvicorn.run()
-        # Note: uvicorn.run() primarily uses specific keyword arguments.
-        # Passing arbitrary command-line flags directly might not work as expected
-        # compared to running uvicorn from the command line itself.
-        # This parser handles --key value and --flag patterns.
         kwargs = {}
         i = 3 # Start parsing from the argument after app_loc
         while i < len(sys.argv):
             arg = sys.argv[i]
             if arg.startswith('--'):
                 key = arg[2:].replace('-', '_') # Convert --some-flag to some_flag
-
-                # Check if it's a flag (no value follows or next arg is also a flag)
                 if i + 1 >= len(sys.argv) or sys.argv[i + 1].startswith('-'):
                     kwargs[key] = True
                     i += 1
-                # Otherwise, assume it's a key-value pair
                 else:
                     value_str = sys.argv[i + 1]
-                    # Attempt basic type conversions
                     try:
-                        # Try int first
                         value = int(value_str)
                     except ValueError:
-                        # Try boolean
-                        if value_str.lower() == 'true':
-                            value = True
-                        elif value_str.lower() == 'false':
-                            value = False
-                        else:
-                            # Keep as string if not int or bool
-                            value = value_str
-
+                        if value_str.lower() == 'true': value = True
+                        elif value_str.lower() == 'false': value = False
+                        else: value = value_str # Keep as string
                     kwargs[key] = value
-                    i += 2 # Move past both key and value
+                    i += 2
             else:
-                # Handle positional arguments if necessary, or log warning/error
                 logger.warning(f"Ignoring non-flag argument: {arg}")
                 i += 1
+
+        # ******** START SOLUTION ********
+        # Ensure the current working directory is in the Python path
+        # so uvicorn can find the application module (e.g., 'main')
+        cwd = os.getcwd()
+        if cwd not in sys.path:
+            logger.info(f"Adding current working directory to sys.path: {cwd}")
+            # Insert at the beginning to ensure it's checked first
+            sys.path.insert(0, cwd)
+        else:
+            # Optional: Log if it's already there
+            logger.debug(f"Current working directory already in sys.path: {cwd}")
+        # ******** END SOLUTION ********
+
 
         logger.info(f"Running uvicorn for '{app_loc}' with arguments: {kwargs}")
 
         # Run uvicorn programmatically
-        # Common arguments for uvicorn.run: host, port, log_level, reload, workers, etc.
         uvicorn.run(app_loc, **kwargs)
 
     except ImportError:
         logger.error("Fatal: Could not import uvicorn. Please install it: pip install uvicorn")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Fatal: Error running uvicorn directly: {e}")
-        # Consider printing traceback for debugging
-        # import traceback
-        # traceback.print_exc()
+        # Improved error logging for loading issues
+        if "Could not import module" in str(e):
+             logger.error(f"Fatal: Error loading ASGI app '{app_loc}'. "
+                          f"Ensure '{app_loc.split(':')[0]}.py' exists in the current directory "
+                          f"or is otherwise importable. Current sys.path: {sys.path}")
+        logger.exception(f"Fatal: Error running uvicorn directly:") # Use exception logger
         sys.exit(1)
 
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
