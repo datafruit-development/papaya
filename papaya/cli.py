@@ -3,6 +3,7 @@ import uvicorn
 import main
 from main import papaya_print, PAPAYA_COLOR, RESET_COLOR
 
+
 def main_cli():
     """Entry point for the papaya command line tool"""
     if len(sys.argv) < 2 or sys.argv[1] != "uvicorn":

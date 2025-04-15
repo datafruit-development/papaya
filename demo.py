@@ -36,9 +36,8 @@ async def create_item(name: str, description: Optional[str]):
     Endpoint to create a new item using form data.
     Requires 'name' and optionally accepts 'description'.
     """
-    new_id = max(items_db.keys()) + 1 if items_db else 1
-    items_db[new_id] = {"name": name, "description": description}
-    return {"item_id": new_id, "name": name, "description": description}
+
+    return "this is a test"
 
 @app.get("/all_items")
 async def get_all_items():

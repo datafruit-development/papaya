@@ -7,6 +7,33 @@ import asyncio
 from fastapi import FastAPI
 from uvicorn.server import Server
 import httpx
+from fastapi_wrapper import wrap_fastapi
+
+# Adding logs endpoint to the webserver at /papaya/logs
+wrap_fastapi()
+
+from mcp.server.fastmcp import FastMCP
+from mcp.server.session import ServerSession
+
+####################################################################################
+# Temporary monkeypatch which avoids crashing when a POST message is received
+# before a connection has been initialized, e.g: after a deployment.
+# pylint: disable-next=protected-access
+old__received_request = ServerSession._received_request
+
+
+async def _received_request(self, *args, **kwargs):
+    try:
+        return await old__received_request(self, *args, **kwargs)
+    except RuntimeError:
+        pass
+
+
+# pylint: disable-next=protected-access
+ServerSession._received_request = _received_request
+####################################################################################
+
+
 
 ### TODO: remove the excessive logging and make it a --verbose option
 
