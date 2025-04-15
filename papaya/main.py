@@ -6,6 +6,7 @@ import threading
 import asyncio
 from fastapi import FastAPI
 from uvicorn.server import Server
+import httpx
 
 ### TODO: remove the excessive logging and make it a --verbose option
 
@@ -54,13 +55,14 @@ async def wrapped_startup(self, sockets=None) -> None:
             try:
                 print("PAPAYA: Found FastAPI app. Creating FastMCP server...")
                 # Dynamically create MCP server from the discovered FastAPI app
-                mcp_server = FastMCP.from_fastapi(
-                    current_app,
-                    name=f"MCP Server for {current_app.title or 'FastAPI App'}"
-                )
-
                 mcp_host = "0.0.0.0" # Or configure as needed
-                mcp_port = 8001      # Choose a port different from the main app
+                mcp_port = 8001
+                uvicorn_port = 3000 # TODO we need to actually properly fill this out
+
+                http_client = httpx.AsyncClient(base_url=f"localhost:{uvicorn_port}")
+
+                mcp_server = FastMCP.from_openapi(current_app.openapi(), http_client, host=mcp_host, port=mcp_port)
+
 
                 print(f"PAPAYA: Starting FastMCP server on http://{mcp_host}:{mcp_port} in a background thread...")
 
@@ -75,7 +77,7 @@ async def wrapped_startup(self, sockets=None) -> None:
                         # If FastMCP uses Uvicorn internally, this might need adjustment
                         # to avoid loop conflicts (e.g., running in a separate process
                         # or using advanced asyncio loop management).
-                        mcp_server.run(host=mcp_host, port=mcp_port)
+                        mcp_server.run(transport="sse")
                         papaya_print("FastMCP server thread finished.")
                     except Exception as e_mcp:
                         papaya_print(f"Error running FastMCP server in thread: {e_mcp}")

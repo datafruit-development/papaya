@@ -1,7 +1,7 @@
 import sys
 import uvicorn
-from . import main
-from .main import papaya_print
+import main
+from main import papaya_print, PAPAYA_COLOR, RESET_COLOR
 
 def main_cli():
     """Entry point for the papaya command line tool"""
@@ -11,32 +11,28 @@ def main_cli():
         print("\nPapaya specific options:")
         print("  --mcp-host HOST      Host for the FastMCP server (default: 0.0.0.0)")
         print("  --mcp-port PORT      Port for the FastMCP server (default: 8001)")
-        print("  --max-unwrap-depth N Maximum depth to traverse middleware stack (default: 10)")
         sys.exit(1)
 
     # Extract papaya-specific arguments and configure
     args = sys.argv[1:]  # Remove 'papaya' command
     i = 0
+
+    # setting defaults
+    MCP_PORT_GLOBAL = "8000"
+    MCP_HOST_GLOBAL = "0.0.0.0"
+
+
     while i < len(args):
         if args[i] == "--mcp-host" and i + 1 < len(args):
-            main.mcp_host_global = args[i + 1]
+            MCP_HOST_GLOBAL = args[i + 1]
             # Remove these arguments from the list
             args.pop(i)
             args.pop(i)
         elif args[i] == "--mcp-port" and i + 1 < len(args):
             try:
-                main.mcp_port_global = int(args[i + 1])
+                MCP_PORT_GLOBAL = int(args[i + 1])
             except ValueError:
-                print(f"{main.PAPAYA_COLOR}PAPAYA:{main.RESET_COLOR} Error - mcp-port must be an integer, got '{args[i + 1]}'")
-                sys.exit(1)
-            # Remove these arguments from the list
-            args.pop(i)
-            args.pop(i)
-        elif args[i] == "--max-unwrap-depth" and i + 1 < len(args):
-            try:
-                main.max_unwrap_depth_global = int(args[i + 1])
-            except ValueError:
-                print(f"{main.PAPAYA_COLOR}PAPAYA:{main.RESET_COLOR} Error - max-unwrap-depth must be an integer, got '{args[i + 1]}'")
+                print(f"{PAPAYA_COLOR}PAPAYA:{RESET_COLOR} Error - mcp-port must be an integer, got '{args[i + 1]}'")
                 sys.exit(1)
             # Remove these arguments from the list
             args.pop(i)
@@ -45,9 +41,9 @@ def main_cli():
             i += 1
 
     # Check for port conflict (basic check)
-    mcp_port = main.mcp_port_global
+    mcp_port = MCP_PORT_GLOBAL
     if f"--port {mcp_port}" in " ".join(args):
-        print(f"{main.PAPAYA_COLOR}Warning:{main.RESET_COLOR} Detected potential port conflict. The main app might be configured to use port {mcp_port}, which Papaya intends to use for the MCP server.")
+        print(f"{PAPAYA_COLOR}Warning:{RESET_COLOR} Detected potential port conflict. The main app might be configured to use port {mcp_port}, which Papaya intends to use for the MCP server.")
 
     # Remove the 'uvicorn' command from args
     if args and args[0] == "uvicorn":
