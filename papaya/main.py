@@ -59,7 +59,7 @@ async def wrapped_startup(self, sockets=None) -> None:
                 mcp_port = 8001
                 uvicorn_port = 3000 # TODO we need to actually properly fill this out
 
-                http_client = httpx.AsyncClient(base_url=f"localhost:{uvicorn_port}")
+                http_client = httpx.AsyncClient(base_url=f"http://localhost:{uvicorn_port}")
 
                 mcp_server = FastMCP.from_openapi(current_app.openapi(), http_client, host=mcp_host, port=mcp_port)
 
