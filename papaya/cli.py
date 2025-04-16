@@ -3,6 +3,8 @@ import uvicorn
 import main
 from main import papaya_print, PAPAYA_COLOR, RESET_COLOR
 
+from fastapi_wrapper import wrap_fastapi
+wrap_fastapi()
 
 def main_cli():
     """Entry point for the papaya command line tool"""

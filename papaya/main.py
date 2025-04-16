@@ -7,10 +7,6 @@ import asyncio
 from fastapi import FastAPI
 from uvicorn.server import Server
 import httpx
-from fastapi_wrapper import wrap_fastapi
-
-# Adding logs endpoint to the webserver at /papaya/logs
-wrap_fastapi()
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.session import ServerSession
@@ -84,7 +80,7 @@ async def wrapped_startup(self, sockets=None) -> None:
                 # Dynamically create MCP server from the discovered FastAPI app
                 mcp_host = "0.0.0.0" # Or configure as needed
                 mcp_port = 8001
-                uvicorn_port = 3000 # TODO we need to actually properly fill this out
+                uvicorn_port = 3001 # TODO we need to actually properly fill this out
 
                 http_client = httpx.AsyncClient(base_url=f"http://localhost:{uvicorn_port}")
 

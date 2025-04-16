@@ -1,50 +1,59 @@
-from fastapi import FastAPI, Request, Form
-from typing import Optional
+from fastapi import FastAPI, Request
 
 app = FastAPI()
-
-# In-memory storage for demo purposes
-items_db = {
-    1: {"name": "Foo", "description": "There comes Foo"},
-    2: {"name": "Bar", "description": "The bartenders"},
-}
 
 @app.get("/")
 async def read_root():
     """
-    Root endpoint that returns a simple greeting.
+    Root endpoint.
     """
     return {"message": "Hello World"}
 
 @app.get("/items/{item_id}")
-async def read_item(item_id: int, q: Optional[str] = None):
+async def read_item(item_id: int):
     """
-    Endpoint to get an item by its ID.
-    Accepts an optional query parameter 'q'.
+    GET endpoint to retrieve an item by ID (no validation).
     """
-    item = items_db.get(item_id)
-    if item:
-        response = {"item_id": item_id, **item}
-        if q:
-            response.update({"q": q})
-        return response
-    return {"error": "Item not found"}
+    return {"item_id": item_id, "description": f"This is item {item_id}"}
 
 @app.post("/items/")
-async def create_item(name: str, description: Optional[str]):
+async def create_item(request: Request):
     """
-    Endpoint to create a new item using form data.
-    Requires 'name' and optionally accepts 'description'.
+    POST endpoint to create an item (no validation).
+    Reads raw request body if needed, but doesn't process it.
     """
+    # Example of accessing raw body if needed, but not required for this simple example
+    # body = await request.body()
+    # print(f"Received body: {body}")
+    return {"message": "Item received"}
 
-    return "this is a test"
+@app.post("/process/")
+async def process_data(request: Request):
+    """
+    POST endpoint for some dummy processing (no validation).
+    """
+    # Example of accessing form data if needed, but not required
+    # try:
+    #     form_data = await request.form()
+    #     print(f"Received form data: {form_data}")
+    # except Exception:
+    #     print("No form data or not form-encoded")
 
-@app.get("/all_items")
-async def get_all_items():
+    # Example of accessing JSON data if needed, but not required
+    # try:
+    #     json_data = await request.json()
+    #     print(f"Received JSON data: {json_data}")
+    # except Exception:
+    #     print("No JSON data or invalid JSON")
+
+    return {"message": "Processing request received"}
+
+@app.get("/status")
+async def get_status():
     """
-    Endpoint to retrieve all items currently stored.
+    GET endpoint to check status.
     """
-    return items_db
+    return {"status": "ok"}
 
 # Example of how to run this app using uvicorn:
-# uvicorn your_filename:app --reload
+# uvicorn your_module_name:app --reload
