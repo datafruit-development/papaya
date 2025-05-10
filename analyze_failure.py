@@ -1,12 +1,13 @@
 from github_utils import get_repo_contents, get_file_contents
-from google.generativeai import GenerativeAI
+from google.genai import Client, types 
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
-genai = GenerativeAI()
+client = Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-def sys_prompt(logs, codebase_structure):
+def get_system_prompt(logs, codebase_structure):
 
     return f"""You are a helpful assistant that analyzes logs from failed Apache Spark jobs and provides a report on the failure.
 
@@ -26,14 +27,31 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, discord_channel_id
 
     codebase_structure = get_repo_contents(github_repo_owner, github_repo_url)
 
-    sys_prompt = sys_prompt(logs, codebase_structure)
+    system_prompt = get_system_prompt(logs, codebase_structure)
 
+    tool_definitions = [{
+        "name": "read_github_file",
+        "description": "Returns the contents of a file from the Github repository.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "description": "Name of the file to read.",
+                },
+            },
+            "required": ["filename"],
+        },
+    }]
+    
+    tools = types.Tool(function_declarations=tool_definitions)
+    config = types.GenerateContentConfig(tools=[tools])
+    
     # Call Gemini API with system prompt
-    response = genai.generate_text(
+    response = client.models.generate_content(
         model="gemini-2.5-pro",
-        prompt=sys_prompt,
-        temperature=0.3,
-        max_output_tokens=2048
+        contents=system_prompt,
+        config=config,
     )
     final_message = response.text
 
