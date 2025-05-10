@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:13-alpine
+    container_name: skew_demo_postgres
+    environment:
+      POSTGRES_USER: demo_user
+      POSTGRES_PASSWORD: demo_password
+      POSTGRES_DB: skew_db
+    ports:
+      - "5433:5432" # Using 5433 to avoid conflict if you have another PG on 5432
+    volumes:
+      - postgres_skew_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo_user -d skew_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_skew_data:

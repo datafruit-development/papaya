@@ -1,0 +1,4 @@
+psycopg2-binary>=2.9.0
+pyspark>=3.4.0
+Faker>=19.0.0
+pandas>=2.0.0
