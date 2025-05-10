@@ -2,6 +2,7 @@ from github_utils import get_repo_contents, get_file_contents
 from google.genai import Client, types 
 from dotenv import load_dotenv
 import os
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -45,30 +46,44 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, discord_channel_id
     }]
     
     tools = types.Tool(function_declarations=tool_definitions)
-    config = types.GenerateContentConfig(tools=[tools])
-    
+    config = types.GenerateContentConfig(tools=[tools], response_mime_type="application/json", response_schema=Report)
+    contents = [types.Content(role="system", parts=[system_prompt])] 
+
     # Call Gemini API with system prompt
     response = client.models.generate_content(
         model="gemini-2.5-pro",
         contents=system_prompt,
         config=config,
     )
+    
+    # Handling function calls
+    has_function_calls = response.candidates[0].content.parts.function_call
+    while has_function_calls:
+        function_call = response.candidates[0].content.parts.function_call
+        result = get_file_contents(github_repo_owner, github_repo_url, **function_call.args)
+        contents.append(types.Content(role="system", parts=[f":Called function: {function_call.name} with args {function_call.args} and got result: {result}"]))
+    
+        response = client.models.generate_content(
+        model="gemini-2.5-pro",
+        contents=contents,
+        config=config,
+        )
+
+        has_function_calls = response.candidates[0].content.parts.function_call
+
     final_message = response.text
-
     report = Report(final_message)
-
     return report
 
+class Report(BaseModel):
+    relevant_logs: str
+    relevant_code: str
+    hypothesis: str
+    suggested_fix: str
 
-
-class Report:
-    def __init__(self, final_message: str):
-        self.final_message = final_message
-        self.logs, self.code, self.ingestion_data, self.hypothesis, self.suggested_fix = self.parse_final_message(final_message)
-    
-    def parse_final_message(self, final_message: str):
-        pass
-
-    def format():
+    def format(self):
         return f"""
         """
+    
+    def parse_final_message(final_message: str):
+        pass
