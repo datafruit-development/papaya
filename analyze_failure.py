@@ -1,4 +1,5 @@
 from github_utils import get_repo_contents, get_file_contents
+from postgres_utils import make_pg_query
 from google.genai import Client, types 
 from dotenv import load_dotenv
 import os
@@ -60,9 +61,16 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, discord_channel_id
     has_function_calls = response.candidates[0].content.parts.function_call
     while has_function_calls:
         function_call = response.candidates[0].content.parts.function_call
-        result = get_file_contents(github_repo_owner, github_repo_url, **function_call.args)
-        contents.append(types.Content(role="system", parts=[f":Called function: {function_call.name} with args {function_call.args} and got result: {result}"]))
-    
+
+        if function_call.name == "read_github_file":
+            result = get_file_contents(github_repo_owner, github_repo_url, **function_call.args)
+            contents.append(types.Content(role="system", parts=[f":Called function: {function_call.name} with args {function_call.args} and got result: {result}"]))
+        elif function_call.name == "make_pg_query":
+            result = make_pg_query(**function_call.args)
+            contents.append(types.Content(role="system", parts=[f":Called function: {function_call.name} with args {function_call.args} and got result: {result}"]))
+        else:
+            raise ValueError(f"Function {function_call.name} not found")
+
         response = client.models.generate_content(
         model="gemini-2.5-pro",
         contents=contents,
