@@ -14,7 +14,7 @@ def get_system_prompt(logs, codebase_structure):
     return f"""You are a helpful assistant that analyzes logs from failed Apache Spark jobs and provides a report on the failure.
 
     Your final message should be in the following format:
-    {Report.format()}
+    {Report.report_format()}
 
     You should analyze the following logs:
     {logs}
@@ -25,7 +25,7 @@ def get_system_prompt(logs, codebase_structure):
     """
 
 # Logs structure is tbd, ingestion_data is tbd
-def analyze_failure(logs, github_repo_owner, github_repo_url, discord_channel_id, ingestion_data) -> Report:
+def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_job_id) -> Report:
 
     codebase_structure = get_repo_contents(github_repo_owner, github_repo_url)
 
@@ -66,7 +66,7 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, discord_channel_id
             result = get_file_contents(github_repo_owner, github_repo_url, **function_call.args)
             contents.append(types.Content(role="system", parts=[f":Called function: {function_call.name} with args {function_call.args} and got result: {result}"]))
         elif function_call.name == "make_pg_query":
-            result = make_pg_query(**function_call.args)
+            result = make_pg_query(pg_db_url, **function_call.args)
             contents.append(types.Content(role="system", parts=[f":Called function: {function_call.name} with args {function_call.args} and got result: {result}"]))
         else:
             raise ValueError(f"Function {function_call.name} not found")
@@ -80,18 +80,32 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, discord_channel_id
         has_function_calls = response.candidates[0].content.parts.function_call
 
     final_message = response.text
-    report = Report(final_message)
+    report = Report(final_message, spark_job_id)
     return report
 
 class Report(BaseModel):
+    spark_job_id: str
     relevant_logs: str
     relevant_code: str
     hypothesis: str
     suggested_fix: str
 
+    @classmethod
+    def report_format():
+        return f"""Relevant Logs: Any snippets from the logs that are relevant to diagnosing the error. This should be a few sentences at most.
+Relevant Code: Any snippets from the codebase that are relevant to diagnosing the error. This should be a few sentences at most.
+Hypothesis: A hypothesis for what the problem is. This should be a paragraph.
+Suggested Fix: A suggested fix for the problem. This should be a paragraph, with actionable steps as to how the user can fix the problem.
+"""
+
     def format(self):
-        return f"""
-        """
+        return f"""Diagnosed Error with Spark Job: {self.spark_job_id} \n\n
+Relevant Logs: {self.relevant_logs} \n\n
+Relevant Code: {self.relevant_code} \n\n
+Hypothesis: {self.hypothesis} \n\n
+Suggested Fix: {self.suggested_fix}
+"""
     
     def parse_final_message(final_message: str):
         pass
+    
