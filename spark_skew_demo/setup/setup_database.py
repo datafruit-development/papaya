@@ -15,6 +15,7 @@ DB_PARAMS = {
 }
 
 NUM_TRANSACTIONS = 1000000  # Target: ~1 million rows
+NUM_TRANSACTIONS = 1000  # smaller for testing
 SKEW_FACTOR = 0.80  # 80% of transactions will have region_id 1
 SKEWED_REGION_ID = 1
 NUM_REGIONS = 10 # Should match regions.csv

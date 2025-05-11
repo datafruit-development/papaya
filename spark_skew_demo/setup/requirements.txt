@@ -1,4 +1,6 @@
-psycopg2-binary>=2.9.0
 pyspark>=3.4.0
-Faker>=19.0.0
+psycopg2-binary>=2.9.9
+matplotlib>=3.7.2
 pandas>=2.0.0
+requests>=2.31.0
+faker>=18.4.0
