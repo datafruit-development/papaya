@@ -62,19 +62,19 @@ if __name__ == "__main__":
         .getOrCreate()
 
     print("Direct Run Skewed Job: Spark session created.")
-    
+
     _db_properties = {
         "user": "demo_user",
         "password": "demo_password",
         "driver": "org.postgresql.Driver"
     }
     _db_url = "jdbc:postgresql://localhost:5433/skew_db"
-    
+
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _data_dir = os.path.join(os.path.dirname(_script_dir), "data")
     _regions_csv_path = os.path.join(_data_dir, "regions.csv")
 
     run_skewed_logic(spark_session, _db_url, _db_properties, _regions_csv_path)
-    
+
     spark_session.stop()
     print("Direct Run Skewed Job: Spark session stopped.")

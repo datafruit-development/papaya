@@ -13,6 +13,7 @@ from pyspark.sql import SparkSession # Import for type hinting and standalone te
 CURRENT_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEMO_ROOT_DIR = os.path.abspath(os.path.join(CURRENT_SCRIPT_DIR, '..'))
 PAPAYA_PROJECT_ROOT = os.path.abspath(os.path.join(DEMO_ROOT_DIR, '..', 'papaya'))
+PAPAYA_PROJECT_ROOT = os.path.abspath(os.path.join(DEMO_ROOT_DIR, '..'))
 PAPAYA_COLLECTORS_DIR = os.path.join(PAPAYA_PROJECT_ROOT, 'collectors')
 
 if PAPAYA_PROJECT_ROOT not in sys.path:
@@ -35,7 +36,7 @@ except ImportError as e:
     print(f"Please ensure the 'papaya' directory is correctly structured and located at: {PAPAYA_PROJECT_ROOT}")
     print(f"And its 'collectors' subdirectory is at: {PAPAYA_COLLECTORS_DIR}")
     # Fallback to dummy collectors if actual ones can't be imported
-  
+
 
 
 # --- Logging Configuration ---
@@ -63,7 +64,7 @@ def setup_collectors(spark: SparkSession, job_name: str, base_log_dir_parent="/t
     dynamic_log_dir = os.path.join(base_log_dir_parent, f"spark_skew_demo_logs_{job_name}_{timestamp_str}")
     os.makedirs(dynamic_log_dir, exist_ok=True)
     logger.info(f"Log directory for CustomLoggingCollector: {dynamic_log_dir}")
-    
+
     # Ensure Spark's event log is also directed if CustomLoggingCollector uses it
     # This is usually configured in SparkSession builder, but good to be aware
     # spark.conf.set("spark.eventLog.dir", dynamic_log_dir) # Example, might conflict if job already started
@@ -175,11 +176,11 @@ def end_job_collection(
             except Exception as e:
                 logger.error(f"Error collecting from {name}: {e}")
                 collected_metrics_data[f"{name}_error"] = str(e)
-    
+
     # Ensure metrics output directory exists
     metrics_output_dir = os.path.join(metrics_output_dir_parent, "spark_skew_demo_metrics")
     os.makedirs(metrics_output_dir, exist_ok=True)
-    
+
     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     metrics_filename = f"metrics_{job_name}_{job_id}_{timestamp_str}.json"
     metrics_filepath = os.path.join(metrics_output_dir, metrics_filename)
@@ -205,10 +206,10 @@ if __name__ == "__main__":
             .config("spark.eventLog.enabled", "true") \
             .config("spark.eventLog.dir", tempfile.mkdtemp(prefix="spark-events-collector-test-")) \
             .getOrCreate()
-        
+
         logger.info(f"Test SparkSession created with App ID: {spark_session.sparkContext.applicationId}")
         logger.info(f"Spark UI: {spark_session.sparkContext.uiWebUrl}")
-        
+
         test_job_name = "collector_test_job"
         test_job_id = f"{test_job_name}_{int(time.time())}"
 
@@ -238,7 +239,7 @@ if __name__ == "__main__":
             job_success=True,
             result_stats=sample_results
         )
-        
+
         if metrics_file and os.path.exists(metrics_file):
             logger.info(f"Standalone test successful. Metrics saved to: {metrics_file}")
             with open(metrics_file, 'r') as f:

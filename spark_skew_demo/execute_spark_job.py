@@ -29,11 +29,11 @@ def main():
     parser.add_argument("job_type", choices=["skewed", "fixed_broadcast", "fixed_salting"],
                         help="Type of Spark job to run.")
     parser.add_argument("--job-name", help="Descriptive name for the job run.", required=True)
-    
+
     args = parser.parse_args()
 
     job_unique_id = f"{args.job_name}_{int(time.time())}"
-    
+
     # Create a dynamic event log directory for this specific job run
     # This can be used by Spark and potentially by CustomLoggingCollector
     event_log_dir = tempfile.mkdtemp(prefix=f"spark-events-{args.job_name}-")
@@ -42,7 +42,7 @@ def main():
     spark = None
     collectors_instance = None
     job_log_dir_for_custom_collector = None # This will be set by setup_collectors
-    
+
     try:
         spark_builder = SparkSession.builder \
             .appName(f"Demo-{args.job_name}") \
@@ -52,6 +52,8 @@ def main():
             .config("spark.eventLog.enabled", "true") \
             .config("spark.eventLog.dir", event_log_dir) \
             .config("spark.jars.packages", "org.postgresql:postgresql:42.6.0") \
+            .config("spark.driver.extraJavaOptions", "-Djava.security.manager=allow") \
+            .config("spark.executor.extraJavaOptions", "-Djava.security.manager=allow") \
             .master("local[*]")
 
         if args.job_type in ["fixed_broadcast", "fixed_salting"]:
@@ -65,7 +67,7 @@ def main():
         # Setup Papaya collectors
         # The log_dir_base is where `setup_collectors` will create its job-specific sub-directory
         collectors_instance, job_log_dir_for_custom_collector = setup_collectors(spark, args.job_name, base_log_dir_parent="/tmp/papaya_job_logs")
-        
+
         # Start collection
         start_job_collection(collectors_instance, job_unique_id)
 
@@ -76,7 +78,7 @@ def main():
             "driver": "org.postgresql.Driver"
         }
         db_url = "jdbc:postgresql://localhost:5433/skew_db"
-        
+
         # Path to regions.csv relative to the location of execute_spark_job.py
         data_dir = os.path.join(CURRENT_SCRIPT_DIR, "data")
         regions_csv_path = os.path.join(data_dir, "regions.csv")

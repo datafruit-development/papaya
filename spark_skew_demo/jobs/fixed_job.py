@@ -31,13 +31,13 @@ def run_fixed_logic(spark: SparkSession, db_url: str, db_properties: dict, regio
             "salt",
             floor(spark_rand(seed=42) * SALT_RANGE) # Added seed for reproducibility
         )
-        
+
         exploded_regions_list = []
         for i in range(SALT_RANGE):
             exploded_regions_list.append(
                 regions_df.withColumn("salt", lit(i))
             )
-        
+
         current_salted_df = exploded_regions_list[0]
         for i in range(1, len(exploded_regions_list)):
             current_salted_df = current_salted_df.unionAll(exploded_regions_list[i])
@@ -76,10 +76,10 @@ def run_fixed_logic(spark: SparkSession, db_url: str, db_properties: dict, regio
 
 if __name__ == "__main__":
     # This block allows running the job directly with spark-submit for testing individual job logic
-    strategy = "broadcast" 
+    strategy = "broadcast"
     if len(sys.argv) > 1 and sys.argv[1] in ["broadcast", "salting"]:
         strategy = sys.argv[1]
-        
+
     spark_session = SparkSession.builder \
         .appName(f"FixedJoinDemoJob_{strategy}_DirectRun") \
         .config("spark.sql.shuffle.partitions", "8") \
@@ -98,12 +98,12 @@ if __name__ == "__main__":
         "driver": "org.postgresql.Driver"
     }
     _db_url = "jdbc:postgresql://localhost:5433/skew_db"
-    
+
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _data_dir = os.path.join(os.path.dirname(_script_dir), "data")
     _regions_csv_path = os.path.join(_data_dir, "regions.csv")
 
     run_fixed_logic(spark_session, _db_url, _db_properties, _regions_csv_path, strategy)
-    
+
     spark_session.stop()
     print(f"Direct Run Fixed Job ({strategy}): Spark session stopped.")
