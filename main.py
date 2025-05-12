@@ -14,7 +14,7 @@ app = FastAPI()
 GITHUB_REPO_OWNER = os.getenv("GITHUB_REPO_OWNER")
 GITHUB_REPO_URL = os.getenv("GITHUB_REPO_URL")
 DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
-INGESTION_DATA = os.getenv("INGESTION_DATA")
+INGESTION_DATA = os.getenv("INGESTION_DATINGESTION_DATAA")
 PG_DB_URL = os.getenv("PG_DB_URL")
 
 class FailedJobDetail(BaseModel):
