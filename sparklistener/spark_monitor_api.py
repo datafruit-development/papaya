@@ -21,7 +21,7 @@ logger = logging.getLogger("SparkStateMonitor")
 # Global configuration
 config = {
     "spark_ui_url": "http://localhost:4040",
-    "webhook_url": "https://webhook.site/7dc07478-a761-44ff-89bc-087a8e14183e",
+    "webhook_url": "https://localhost:8000",
     "polling_interval": 0.01,
     "port_check_interval": 0.1,
     "is_monitoring": False,

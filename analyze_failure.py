@@ -9,6 +9,33 @@ load_dotenv()
 
 client = Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+class Report(BaseModel):
+    spark_job_id: str
+    relevant_logs: str
+    relevant_code: str
+    hypothesis: str
+    suggested_fix: str
+
+    @classmethod
+    def report_format():
+        return f"""Relevant Logs: Any snippets from the logs that are relevant to diagnosing the error. This should be a few sentences at most.
+Relevant Code: Any snippets from the codebase that are relevant to diagnosing the error. This should be a few sentences at most.
+Hypothesis: A hypothesis for what the problem is. This should be a paragraph.
+Suggested Fix: A suggested fix for the problem. This should be a paragraph, with actionable steps as to how the user can fix the problem.
+"""
+
+    def format(self):
+        return f"""Diagnosed Error with Spark Job: {self.spark_job_id} \n\n
+Relevant Logs: {self.relevant_logs} \n\n
+Relevant Code: {self.relevant_code} \n\n
+Hypothesis: {self.hypothesis} \n\n
+Suggested Fix: {self.suggested_fix}
+"""
+    
+    def parse_final_message(final_message: str):
+        pass
+    
+
 def get_system_prompt(logs, codebase_structure):
 
     return f"""You are a helpful assistant that analyzes logs from failed Apache Spark jobs and provides a report on the failure.
@@ -90,30 +117,3 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_j
         hypothesis=response_data["hypothesis"],
         suggested_fix=response_data["suggested_fix"]
     )
-
-class Report(BaseModel):
-    spark_job_id: str
-    relevant_logs: str
-    relevant_code: str
-    hypothesis: str
-    suggested_fix: str
-
-    @classmethod
-    def report_format():
-        return f"""Relevant Logs: Any snippets from the logs that are relevant to diagnosing the error. This should be a few sentences at most.
-Relevant Code: Any snippets from the codebase that are relevant to diagnosing the error. This should be a few sentences at most.
-Hypothesis: A hypothesis for what the problem is. This should be a paragraph.
-Suggested Fix: A suggested fix for the problem. This should be a paragraph, with actionable steps as to how the user can fix the problem.
-"""
-
-    def format(self):
-        return f"""Diagnosed Error with Spark Job: {self.spark_job_id} \n\n
-Relevant Logs: {self.relevant_logs} \n\n
-Relevant Code: {self.relevant_code} \n\n
-Hypothesis: {self.hypothesis} \n\n
-Suggested Fix: {self.suggested_fix}
-"""
-    
-    def parse_final_message(final_message: str):
-        pass
-    
