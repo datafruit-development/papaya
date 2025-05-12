@@ -1,10 +1,10 @@
 from analyze_failure import analyze_failure
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Body 
 import os
 from dotenv import load_dotenv
 from discord_utils import send_discord_message
-from typing import List, Optional
-from pydantic import BaseModel
+from typing import List, Optional, Dict, Any, Tuple
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 load_dotenv()
@@ -17,6 +17,71 @@ DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 INGESTION_DATA = os.getenv("INGESTION_DATINGESTION_DATAA")
 PG_DB_URL = os.getenv("PG_DB_URL")
 
+class AppAttempt(BaseModel):
+    startTime: str
+    endTime: str
+    lastUpdated: str
+    duration: int
+    sparkUser: str
+    completed: bool
+    appSparkVersion: str
+    startTimeEpoch: int
+    endTimeEpoch: int
+    lastUpdatedEpoch: int
+
+class AppInfo(BaseModel):
+    id: str
+    name: str
+    attempts: List[AppAttempt]
+
+class Job(BaseModel):
+    jobId: int
+    name: str
+    submissionTime: str
+    completionTime: str
+    stageIds: List[int]
+    jobTags: List[str]
+    status: str
+    numTasks: int
+    numFailedTasks: int
+    numKilledTasks: int
+    numCompletedTasks: int
+    killedTasksSummary: Dict[str, Any]
+
+class Stage(BaseModel):
+    status: str
+    stageId: int
+    attemptId: int
+    numTasks: int
+    numFailedTasks: int
+    failureReason: str
+
+class Executor(BaseModel):
+    id: str
+    hostPort: str
+    isActive: bool
+    totalCores: int
+    failedTasks: int
+    completedTasks: int
+
+class ResourceMetrics(BaseModel):
+    resourceName: str
+    amount: float
+
+class ResourceProfile(BaseModel):
+    id: int
+    executorResources: Dict[str, ResourceMetrics]
+    taskResources: Dict[str, ResourceMetrics]
+
+class Environment(BaseModel):
+    runtime: Dict[str, str]
+    sparkProperties: List[Tuple[str, str]]
+    hadoopProperties: List[Tuple[str, str]]
+    systemProperties: List[Tuple[str, str]]
+    metricsProperties: List[Tuple[str, str]]
+    classpathEntries: List[Tuple[str, str]]
+    resourceProfiles: List[ResourceProfile]
+
 class FailedJobDetail(BaseModel):
     job_id: int
     name: str
@@ -28,24 +93,26 @@ class FailedStageDetail(BaseModel):
     attempt_id: int
     name: str
     status: str
-    failure_reason: Optional[str] = None
-    exception: Optional[str] = None
+    failure_reason: str
 
 class TaskFailure(BaseModel):
     stage_id: int
     task_id: int
     attempt: int
     status: str
-    error_message: Optional[str] = None
-    has_exception: bool
+    error_message: str
     executor_id: str
 
-class FailureInfo(BaseModel):
+class AppState(BaseModel):
     app_id: str
-    app_name: str
     timestamp: float
-    has_failures: bool
-    is_completed: bool
+    app_info: AppInfo
+    jobs: List[Job]
+    stages: List[Stage]
+    executors: List[Executor]
+    environment: Environment
+    
+    # Failure summary
     has_failed_jobs: bool
     failed_jobs_details: List[FailedJobDetail]
     has_failed_stages: bool
@@ -54,115 +121,82 @@ class FailureInfo(BaseModel):
     task_failures: List[TaskFailure]
     executor_failure_count: int
     has_executor_failures: bool
+    has_failures: bool
+    is_completed: bool
+    hash: str
 
 class ApplicationStateChange(BaseModel):
+    message: str
     event_type: str
-    is_new_app: bool
-    failures: FailureInfo
+    app_state: AppState
 
-def extract_error_summary(error_message: str) -> str:
-    """Extract the main Python error from a full stack trace."""
-    if not error_message:
-        return "Unknown error"
-    
-    # Look for Python traceback
-    lines = error_message.split('\n')
-    for line in lines:
-        if any(err in line for err in ['Error:', 'Exception:']):
-            return line.strip()
-    return lines[0].strip()
 
-@app.post("/analyze_failure")
-async def analyze_failure_endpoint(request: Request):
-    data = await request.json()
-    logs = data["logs"]
-
-    report = analyze_failure(logs, GITHUB_REPO_OWNER, GITHUB_REPO_URL, PG_DB_URL)
-    await send_discord_message(report.to_string(), DISCORD_CHANNEL_ID)
-
-@app.post("/webhook/app_state")
-async def handle_app_state_webhook(payload: ApplicationStateChange):
+@app.post("/webhook/analyze_failure")
+async def handle_app_state_webhook(
+    payload: ApplicationStateChange = Body(...)
+):
+    # only process the correct event
     if payload.event_type != "application_state_change":
         return {"status": "error", "message": "Invalid event type"}
-    
-    if payload.failures.has_failures:
-        # Extract all variables from payload
-        event_type = payload.event_type
-        is_new_app = payload.is_new_app
-        
-        # Application info
-        app_id = payload.failures.app_id
-        app_name = payload.failures.app_name
-        timestamp = payload.failures.timestamp
-        is_completed = payload.failures.is_completed
-        
-        # Job failures
-        has_failed_jobs = payload.failures.has_failed_jobs
-        failed_jobs_details = payload.failures.failed_jobs_details
-        
-        # Stage failures
-        has_failed_stages = payload.failures.has_failed_stages
-        failed_stages_details = payload.failures.failed_stages_details
-        
-        # Task failures
-        task_failure_count = payload.failures.task_failure_count
-        task_failures = payload.failures.task_failures
-        
-        # Executor failures
-        executor_failure_count = payload.failures.executor_failure_count
-        has_executor_failures = payload.failures.has_executor_failures
 
+    f = payload.app_state
 
-        # Convert timestamp to human-readable form
-        readable_ts = datetime.fromtimestamp(timestamp).isoformat()
+    # nothing to do if no failures
+    if not f.has_failures:
+        return {"status": "ok", "message": "No failures detected"}
 
-        # Build up log lines
-        log_lines = [
-            f"Event Type: {event_type}",
-            f"New App: {is_new_app}",
-            f"App ID: {app_id}",
-            f"App Name: {app_name}",
-            f"Timestamp: {timestamp} ({readable_ts})",
-            f"Completed: {is_completed}",
-        ]
+    # human‐readable timestamp
+    readable_ts = datetime.fromtimestamp(f.timestamp).isoformat()
 
-        # Include job failures
-        if has_failed_jobs and failed_jobs_details:
-            log_lines.append("\nJob Failures:")
-            for job in failed_jobs_details:
-                log_lines.append(
-                    f"  • Job {job['job_id']} — {job['name']} | Status: {job['status']} | "
-                    f"Reason: {job.get('failure_reason', 'N/A')}"
-                )
+    # start building up the logs
+    logs = [
+        f"Event Type: {payload.event_type}",
+        f"Message: {payload.message}",
+        f"App ID: {f.app_id}",
+        f"App Name: {f.app_info.name}",
+        f"Timestamp: {f.timestamp} ({readable_ts})",
+        f"Completed: {f.is_completed}",
+    ]
 
-        # Include stage failures
-        if has_failed_stages and failed_stages_details:
-            log_lines.append("\nStage Failures:")
-            for stage in failed_stages_details:
-                log_lines.append(
-                    f"  • Stage {stage['stage_id']} (attempt {stage['attempt_id']}) — {stage['name']} | "
-                    f"Status: {stage['status']} | Reason: {stage.get('failure_reason', 'N/A')}"
-                )
-
-        # Include task failures (cap error message length for brevity)
-        log_lines.append(f"\nTotal Task Failures: {task_failure_count}")
-        for task in task_failures:
-            err = task.get('error_message', '').replace("\n", " ")
-            truncated_err = (err[:200] + '…') if len(err) > 200 else err
-            log_lines.append(
-                f"  • Stage {task['stage_id']} Task {task['task_id']} (attempt {task['attempt']}) | "
-                f"Executor: {task['executor_id']} | Error: {truncated_err}"
+    # job failures
+    if f.has_failed_jobs:
+        logs.append("\nJob Failures:")
+        for job in f.failed_jobs_details:
+            logs.append(
+                f"  • Job {job.job_id} — {job.name} — {job.status} — "
+                f"{job.failure_reason or 'N/A'}"
             )
 
-        # Include executor failure summary
-        log_lines.append(f"\nExecutor Failures: {executor_failure_count}")
-        log_lines.append(f"Has Executor Failures: {has_executor_failures}")
+    # stage failures
+    if f.has_failed_stages:
+        logs.append("\nStage Failures:")
+        for stage in f.failed_stages_details:
+            logs.append(
+                f"  • Stage {stage.stage_id}.{stage.attempt_id} — "
+                f"{stage.name} — {stage.status} — "
+                f"{stage.failure_reason}"
+            )
 
-        # Final log string to pass to the LLM
-        log_string = "\n".join(log_lines)
+    # task failures (take just the first line of each error)
+    if f.task_failure_count:
+        logs.append(f"\nTask Failures ({f.task_failure_count}):")
+        for t in f.task_failures:
+            summary = t.error_message.split("\n", 1)[0] if t.error_message else "N/A"
+            logs.append(
+                f"  • Task {t.stage_id}.{t.task_id}.{t.attempt} on "
+                f"{t.executor_id} — {t.status} — {summary}"
+            )
 
-        report = analyze_failure(log_string, GITHUB_REPO_OWNER, GITHUB_REPO_URL, PG_DB_URL, app_id)
-        await send_discord_message(report.to_string(), DISCORD_CHANNEL_ID)
+    # executor‐failure count
+    if f.has_executor_failures:
+        logs.append(f"\nExecutor Failures Count: {f.executor_failure_count}")
 
-    return {"status": "success", "message": "Webhook processed successfully"}
+    # join them all into one string
+    log_text = "\n".join(logs)
+
+    # hand it off
+    analyze_failure(log_text, GITHUB_REPO_OWNER, GITHUB_REPO_URL, PG_DB_URL, f.app_id)
+    send_discord_message(DISCORD_CHANNEL_ID, log_text)
+
+    return {"status": "ok"}
     
