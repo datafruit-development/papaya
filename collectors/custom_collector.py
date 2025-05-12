@@ -217,6 +217,46 @@ class CustomLoggingCollector(BaseCollector):
         
         return metrics
     
+    def check_for_critical_exceptions(self) -> Optional[Dict[str, Any]]:
+        """Check for critical exceptions in logs and return details if any.
+    
+        Returns:
+            Dictionary with exception details or None if no critical exceptions
+        """
+        # Check for exceptions in the most recent logs
+        context = {"only_new": True}  # Only check new log entries since last scan
+        metrics = self.collect(context)
+        
+        critical_exceptions = []
+        critical_patterns = [
+            "OutOfMemoryError", 
+            "SparkException",
+            "ExecutorLostFailure",
+            "FetchFailedException",
+            "TaskKilledException"
+        ]
+        
+        # Check latest exceptions
+        for exception in metrics.get("exceptions", {}).get("latest", []):
+            exception_type = exception.get("type", "Unknown")
+            exception_message = exception.get("message", "")
+            
+            # Check if this is a critical exception
+            is_critical = any(pattern in exception_type or pattern in exception_message 
+                            for pattern in critical_patterns)
+            
+            if is_critical:
+                self.logger.info(f"Detected critical exception: {exception_type}")
+                critical_exceptions.append(exception)
+        
+        if critical_exceptions:
+            return {
+                "timestamp": time.time(),
+                "num_critical_exceptions": len(critical_exceptions),
+                "exceptions": critical_exceptions
+            }
+        
+        return None
     def _get_log_files(self) -> List[str]:
         """Get all log files in the log directory.
         

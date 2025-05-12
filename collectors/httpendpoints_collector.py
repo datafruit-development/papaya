@@ -161,6 +161,74 @@ class SparkHttpCollector(BaseCollector):
             
         return None
     
+    def check_for_failures(self) -> Optional[Dict[str, Any]]:
+        """Check for failed jobs and return failure details if any.
+        
+        Returns:
+            Dictionary with failure details or None if no failures
+        """
+        if not self.app_id:
+            self.logger.warning("No application ID available for failure detection")
+            return None
+            
+        try:
+            # Get jobs information
+            jobs_info = self._get_jobs_info()
+            
+            # Check for failed jobs
+            failed_jobs = []
+            for job in jobs_info.get("details", []):
+                if job.get("status") == "FAILED":
+                    # Found a failed job
+                    job_id = job.get("jobId")
+                    self.logger.info(f"Detected failed job: {job_id}")
+                    
+                    # Get more details about the failure
+                    failure_details = {
+                        "app_id": self.app_id,
+                        "job_id": job_id,
+                        "name": job.get("name", "Unknown"),
+                        "submission_time": job.get("submissionTime"),
+                        "completion_time": job.get("completionTime"),
+                        "num_tasks": job.get("numTasks"),
+                        "num_failed_tasks": job.get("numFailedTasks", 0),
+                        "failure_reason": None  # Will try to fill this in
+                    }
+                    
+                    # Get failed stages for this job
+                    stages_info = self._get_stages_info()
+                    failure_details["stages"] = []
+                    
+                    for stage in stages_info.get("details", []):
+                        if stage.get("status") == "FAILED":
+                            # Check if this stage belongs to our job
+                            stage_job_ids = stage.get("jobIds", [])
+                            if isinstance(stage_job_ids, list) and str(job_id) in [str(j) for j in stage_job_ids]:
+                                failure_details["stages"].append({
+                                    "stage_id": stage.get("stageId"),
+                                    "name": stage.get("name"),
+                                    "failure_reason": stage.get("failureReason")
+                                })
+                                
+                                # If we don't have a failure reason yet, use this stage's reason
+                                if not failure_details["failure_reason"] and stage.get("failureReason"):
+                                    failure_details["failure_reason"] = stage.get("failureReason")
+                    
+                    failed_jobs.append(failure_details)
+            
+            if failed_jobs:
+                return {
+                    "timestamp": time.time(),
+                    "num_failed_jobs": len(failed_jobs),
+                    "failed_jobs": failed_jobs
+                }
+            
+            return None
+        
+        except Exception as e:
+            self.logger.error(f"Error checking for failures: {str(e)}")
+            return None
+        
     def _get_application_info(self) -> Dict[str, Any]:
         """Get information about the Spark application.
         
