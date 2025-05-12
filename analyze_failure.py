@@ -72,16 +72,24 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_j
             raise ValueError(f"Function {function_call.name} not found")
 
         response = client.models.generate_content(
-        model="gemini-2.5-pro",
-        contents=contents,
-        config=config,
+            model="gemini-2.5-pro",
+            contents=contents,
+            config=config,
         )
 
         has_function_calls = response.candidates[0].content.parts.function_call
 
-    final_message = response.text
-    report = Report(final_message, spark_job_id)
-    return report
+    # Parse the structured response from Gemini
+    response_data = response.candidates[0].content.parts[0].structured_response
+    
+    # Create and return the Report object
+    return Report(
+        spark_job_id=spark_job_id,
+        relevant_logs=response_data["relevant_logs"],
+        relevant_code=response_data["relevant_code"],
+        hypothesis=response_data["hypothesis"],
+        suggested_fix=response_data["suggested_fix"]
+    )
 
 class Report(BaseModel):
     spark_job_id: str
