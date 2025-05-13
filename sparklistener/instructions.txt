@@ -1,0 +1,25 @@
+run
+'''
+uv run uvicorn spark_monitor_api:app --host 0.0.0.0 --port 8000 --reload 
+'''
+
+to start monitoring
+'''
+curl -X POST "http://localhost:8000/start" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "spark_ui_url":      "http://localhost:4040",
+           "webhook_url":       "http://localhost:8001/webhook/analyze_failure",
+           "polling_interval":  0.5
+         }'
+'''
+
+then make sure webserver in main running in project root directory
+'''
+uv run fastapi run
+'''
+
+then run demo spark job
+'''
+uv run faulty_app.py
+'''
