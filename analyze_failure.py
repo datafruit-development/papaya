@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 load_dotenv()
 
+MODEL = "gemini-2.5-pro-exp-03-25"
 client = Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 class Report(BaseModel):
@@ -16,7 +17,7 @@ class Report(BaseModel):
     hypothesis: str
     suggested_fix: str
 
-    @classmethod
+    @staticmethod
     def report_format():
         return f"""Relevant Logs: Any snippets from the logs that are relevant to diagnosing the error. This should be a few sentences at most.
 Relevant Code: Any snippets from the codebase that are relevant to diagnosing the error. This should be a few sentences at most.
@@ -64,56 +65,62 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_j
         "parameters": {
             "type": "object",
             "properties": {
-                "filename": {
+                "path": {
                     "type": "string",
-                    "description": "Name of the file to read.",
+                    "description": "Path to the file to read.",
                 },
             },
-            "required": ["filename"],
+            "required": ["path"],
         },
     }]
     
     tools = types.Tool(function_declarations=tool_definitions)
-    config = types.GenerateContentConfig(tools=[tools], response_mime_type="application/json", response_schema=Report)
-    contents = [types.Content(role="system", parts=[system_prompt])] 
+    config = types.GenerateContentConfig(tools=[tools], response_schema=Report)
+    contents = [
+        types.Content(role="user", parts=[{"text": system_prompt}])
+    ]
 
     # Call Gemini API with system prompt
     response = client.models.generate_content(
-        model="gemini-2.5-pro",
-        contents=system_prompt,
+        model=MODEL,
+        contents=contents,
         config=config,
     )
-    
-    # Handling function calls
-    has_function_calls = response.candidates[0].content.parts.function_call
-    while has_function_calls:
-        function_call = response.candidates[0].content.parts.function_call
 
-        if function_call.name == "read_github_file":
-            result = get_file_contents(github_repo_owner, github_repo_url, **function_call.args)
-            contents.append(types.Content(role="system", parts=[f":Called function: {function_call.name} with args {function_call.args} and got result: {result}"]))
-        elif function_call.name == "make_pg_query":
-            result = make_pg_query(pg_db_url, **function_call.args)
-            contents.append(types.Content(role="system", parts=[f":Called function: {function_call.name} with args {function_call.args} and got result: {result}"]))
-        else:
-            raise ValueError(f"Function {function_call.name} not found")
 
+    print(response.function_calls)
+
+    # Keep processing while there are function calls in any part
+    while response.function_calls: 
+        # Handle each function call
+        for function_call in response.function_calls:
+            if function_call.name == "read_github_file":
+                result = get_file_contents(github_repo_owner, github_repo_url, **function_call.args)
+                contents.append(types.Content(role="model", parts=[{"text": f"Called function: {function_call.name} with args {function_call.args} and got result: {result}"}]))
+                contents.append(types.Content(role="user", parts=[{"text": "Please continue with the analysis and provide your final response in the structured format specified, without any additional text."}]))
+            # elif function_call.name == "make_pg_query":
+            #     result = make_pg_query(pg_db_url, **function_call.args)
+            #     contents.append(types.Content(role="system", parts=[{"text": f"Called function: {function_call.name} with args {function_call.args} and got result: {result}"}]))
+            else:
+                raise ValueError(f"Function {function_call.name} not found")
+
+        # Get the next response
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model=MODEL,
             contents=contents,
             config=config,
         )
 
-        has_function_calls = response.candidates[0].content.parts.function_call
+    return response.text 
 
-    # Parse the structured response from Gemini
-    response_data = response.candidates[0].content.parts[0].structured_response
-    
-    # Create and return the Report object
-    return Report(
-        spark_job_id=spark_job_id,
-        relevant_logs=response_data["relevant_logs"],
-        relevant_code=response_data["relevant_code"],
-        hypothesis=response_data["hypothesis"],
-        suggested_fix=response_data["suggested_fix"]
+
+if __name__ == "__main__":
+    report = analyze_failure(
+        logs="This is a test. Make up a fake report, and call the function you have access to.",
+        github_repo_owner="",
+        github_repo_url="",
+        pg_db_url="",
+        spark_job_id=""
     )
+
+    print(report)

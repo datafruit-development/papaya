@@ -40,17 +40,6 @@ async def status(ctx):
     """Command to check the bot status."""
     await ctx.send(f"Spark Pipeline Debugger is online! Monitoring for failures.")
 
-@bot.command(name="help")
-async def help_spark(ctx):
-    """Command to show help information."""
-    help_text = """
-**Spark Pipeline Debugger Bot Commands**
-- `!status` - Check if the bot is online
-- `!help` - Show this help message
-    """
-    await ctx.send(help_text)
-
-
 # use this to connect to spark
 async def send_discord_message(message: str, channel_id: int = None):
     """

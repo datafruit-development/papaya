@@ -36,6 +36,8 @@ def get_repo_contents(owner: str, repo: str, path: str = "", token: Optional[str
         A list of ContentFile objects representing the items in the directory.
         For files, returns a list with a single ContentFile.
     """
+
+    return "UNIMPLEMENTED"
     gh = get_github_client(token)
     repository = gh.get_repo(f"{owner}/{repo}")
     
@@ -63,6 +65,7 @@ def get_file_contents(owner: str, repo: str, path: str, token: Optional[str] = N
         You can access the decoded content using .decoded_content
         and other metadata like .name, .path, .sha, etc.
     """
+    return "UNIMPLEMENTED"
     if not path:
         raise ValueError("Path cannot be empty for get_file_contents.")
 
