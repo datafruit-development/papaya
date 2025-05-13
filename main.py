@@ -2,7 +2,7 @@ from analyze_failure import analyze_failure
 from fastapi import FastAPI, Body 
 import os
 from dotenv import load_dotenv
-from discord_utils import send_discord_message
+from discord_utils import start_discord_bot, send_discord_message
 from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -12,10 +12,12 @@ load_dotenv()
 app = FastAPI()
 
 GITHUB_REPO_OWNER = os.getenv("GITHUB_REPO_OWNER")
-GITHUB_REPO_URL = os.getenv("GITHUB_REPO")
+GITHUB_REPO_URL = os.getenv("GITHUB_REPO_URL")
 DISCORD_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 INGESTION_DATA = os.getenv("INGESTION_DATINGESTION_DATAA")
 PG_DB_URL = os.getenv("PG_DB_URL")
+
+start_discord_bot()
 
 class AppAttempt(BaseModel):
     startTime: str
@@ -195,8 +197,8 @@ async def handle_app_state_webhook(
     log_text = "\n".join(logs)
 
     # hand it off
-    analyze_failure(log_text, GITHUB_REPO_OWNER, GITHUB_REPO_URL, PG_DB_URL, f.app_id)
-    send_discord_message(DISCORD_CHANNEL_ID, log_text)
+    report = analyze_failure(log_text, GITHUB_REPO_OWNER, GITHUB_REPO_URL, PG_DB_URL, f.app_id)
+    send_discord_message(report, DISCORD_CHANNEL_ID)
 
     return {"status": "ok"}
     
