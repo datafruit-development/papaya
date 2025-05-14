@@ -162,3 +162,8 @@ def make_code_change(owner: str, repo: str, new_content: dict, branch_name: str 
         except:
             pass
         raise Exception(f"Failed to create pull request: {str(e)}")
+
+    
+
+if __name__ == "__main__":
+    print(get_repo_contents("lychee-development", "spark_debugger_demo"))

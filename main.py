@@ -6,6 +6,7 @@ from discord_utils import start_discord_bot, send_discord_message
 from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel, Field
 from datetime import datetime
+from code_repair import repair_code
 
 load_dotenv()
 
@@ -198,7 +199,13 @@ async def handle_app_state_webhook(
 
     # hand it off
     report = analyze_failure(log_text, GITHUB_REPO_OWNER, GITHUB_REPO_URL, PG_DB_URL, f.app_id)
+    
     send_discord_message(report, DISCORD_CHANNEL_ID)
 
+    # Time for code repair
+    url = repair_code(GITHUB_REPO_OWNER, GITHUB_REPO_URL, report)
+    if url:
+        send_discord_message(f"Code repair PR created: {url}", DISCORD_CHANNEL_ID)
+
     return {"status": "ok"}
-    
+
