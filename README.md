@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="logo.svg" alt="Papaya Logo" width="400">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/lychee-development/papaya/blob/main/logo_dark.svg?raw=true">
+    <source media="(prefers-color-scheme: light)" srcset="https://github.com/lychee-development/papaya/blob/main/logo_light.svg?raw=true">
+    <img alt="Papaya Logo" src="https://github.com/lychee-development/papaya/blob/main/logo_light.svg?raw=true" width="300" style="display: block; margin: 0 auto;">
+  </picture>
 </p>
 
 ---
