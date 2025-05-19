@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" alt="Papaya Logo" width="200">
+  <img src="logo.svg" alt="Papaya Logo" width="400">
 </p>
 
 ---
