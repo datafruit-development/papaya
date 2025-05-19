@@ -21,7 +21,7 @@ It seamlessly integrates error monitoring, real-time notifications, and automate
 
 ## 🛠️ Installation
 
-Install Papaya 🌺 via pip:
+Install Papaya via pip:
 
 ```bash
 pip install papaya-debugger
