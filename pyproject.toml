@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "build>=1.2.2.post1",
     "discord.py>=2.3.2",
     "fastapi[standard]>=0.115.12",
     "google-genai>=1.14.0",
@@ -13,4 +14,5 @@ dependencies = [
     "pygithub>=2.6.1",
     "pyspark>=3.5.5",
     "python-dotenv>=1.0.0",
+    "twine>=6.1.0",
 ]
