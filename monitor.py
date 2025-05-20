@@ -288,6 +288,9 @@ def monitor_loop(
                         state["app_id"],
                     )
 
+                    print("----- ERROR REPORT -----")
+                    print(report)
+
                     if discord_cid:
                         send_discord_message(report, discord_cid)
 

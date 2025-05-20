@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-MODEL = "gemini-2.5-pro-exp-03-25"
+MODEL = "gemini-2.5-pro-preview-03-25"
 client = Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 class Report(BaseModel):
