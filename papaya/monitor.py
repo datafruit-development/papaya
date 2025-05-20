@@ -239,7 +239,7 @@ def _build_log(state: Dict[str, Any]) -> str:
 # -------------------------------------------------------------------------
 # Main monitoring loop
 # -------------------------------------------------------------------------
-def monitor_loop(
+async def monitor_loop(
     spark_ui: str,
     polling: float,
     discord_cid: Optional[str],
@@ -292,15 +292,15 @@ def monitor_loop(
                     print(report)
 
                     if discord_cid:
-                        send_discord_message(report, discord_cid)
+                        await send_discord_message(report, int(discord_cid))
 
                     if github_repo:
                         pr_url = repair_code(
                             github_repo.split("/")[0], github_repo, report
                         )
                         if pr_url and discord_cid:
-                            send_discord_message(
-                                f"🛠️  Code repair PR created: {pr_url}", discord_cid
+                            await send_discord_message(
+                                f"🛠️  Code repair PR created: {pr_url}", int(discord_cid)
                             )
 
             # ------------------------------------------------------------------
@@ -370,11 +370,14 @@ def main(argv: Optional[List[str]] = None) -> None:
     if args.github_repo:
         print("→ will link to GitHub repo %s", args.github_repo)
 
-    monitor_loop(
-        spark_ui=args.url,
-        polling=args.poll,
-        discord_cid=args.discord_cid,
-        github_repo=args.github_repo,
+    import asyncio
+    asyncio.run(
+        monitor_loop(
+            spark_ui=args.url,
+            polling=args.poll,
+            discord_cid=args.discord_cid,
+            github_repo=args.github_repo,
+        )
     )
 
 

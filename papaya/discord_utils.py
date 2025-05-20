@@ -10,13 +10,15 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger("discord_utils")
+logger = logging.getLogger()
 
 # Load environment variables
 load_dotenv()
 
 # Get Discord token from environment variables (expects DISCORD_TOKEN)
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+if DISCORD_TOKEN is not None:
+    DISCORD_TOKEN = DISCORD_TOKEN.strip()
 DEFAULT_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 
 intents = discord.Intents.default()
@@ -26,12 +28,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_ready():
     """Event handler for when the bot is ready and connected to Discord."""
-    logger.info(f'Bot connected as {bot.user.name} (ID: {bot.user.id})')
-    logger.info(f'Bot is in {len(bot.guilds)} guilds')
-
-    for guild in bot.guilds:
-        logger.info(f'- {guild.name} (ID: {guild.id})')
-
     # Set bot status
     await bot.change_presence(activity=discord.Game(name="bot is ready"))
 
@@ -67,7 +63,6 @@ async def send_discord_message(message: str, channel_id: int = None):
 
         # Send the message
         await channel.send(message)
-        logger.info(f"Message sent to Discord channel {channel_id}")
         return True
 
     except Exception as e:
@@ -122,7 +117,6 @@ async def send_failure_alert(failure_type: str, details: dict, channel_id: int =
         channel = bot.get_channel(int(channel_id))
         if channel:
             await channel.send(embed=embed)
-            logger.info(f"Failure alert for {failure_type} sent to Discord")
             return True
         else:
             logger.error(f"Could not find Discord channel with ID {channel_id}")
@@ -161,5 +155,4 @@ def start_discord_bot():
     bot_thread = threading.Thread(target=run_bot_thread, daemon=True)
     bot_thread.start()
 
-    logger.info("Discord bot started in background thread")
     return True
