@@ -15,8 +15,8 @@ logger = logging.getLogger("discord_utils")
 # Load environment variables
 load_dotenv()
 
-# Get Discord token from environment variables
-DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+# Get Discord token from environment variables (expects DISCORD_TOKEN)
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DEFAULT_CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 
 intents = discord.Intents.default()
@@ -137,7 +137,7 @@ def start_discord_bot():
     This function should be called when the server starts.
     """
     if not DISCORD_TOKEN:
-        logger.error("Discord bot token not found. Make sure to set DISCORD_BOT_TOKEN in .env")
+        logger.error("Discord bot token not found. Make sure to set DISCORD_TOKEN in .env")
         return False
 
     # Run the bot in a separate thread
