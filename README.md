@@ -40,13 +40,13 @@ papaya http://localhost:4040
 To enable Discord notifications (requires `DISCORD_TOKEN` environment variable):
 
 ```bash
-DISCORD_TOKEN=your_token papaya http://localhost:4040 --discord-cid 123456789
+papaya http://localhost:4040 --discord-cid 123456789
 ```
 
 To enable GitHub integration (requires `GH_APP_TOKEN` environment variable):
 
 ```bash
-GH_APP_TOKEN=your_token papaya http://localhost:4040 --github-repo myorg/myrepo
+papaya http://localhost:4040 --github-repo myorg/myrepo
 ```
 
 You can also adjust the polling interval (default is 0.5 seconds):
@@ -54,6 +54,8 @@ You can also adjust the polling interval (default is 0.5 seconds):
 ```bash
 papaya http://localhost:4040 --poll 2.0
 ```
+
+> **Note:** You must set the `GEMINI_API_KEY` environment variable for Papaya to function.
 
 ---
 
@@ -68,6 +70,7 @@ papaya http://localhost:4040 --poll 2.0
 - `--poll <SECONDS>`: Polling interval in seconds (default: 0.5)
 
 **Environment Variables:**
+- `GEMINI_API_KEY`: **Required** for Papaya to function (used for LLM-powered debugging).
 - `DISCORD_TOKEN`: Required if using `--discord-cid` to send notifications to Discord.
 - `GH_APP_TOKEN`: Required if using `--github-repo` to link to a GitHub repository.
 
