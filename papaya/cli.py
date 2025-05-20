@@ -2,7 +2,7 @@
 import argparse
 import os
 import sys
-from monitor import monitor_loop
+from papaya.monitor import monitor_loop
 from typing import Optional, List
 
 def build_parser() -> argparse.ArgumentParser:

@@ -1,6 +1,6 @@
-from github_utils import get_repo_contents, get_file_contents
-from postgres_utils import make_pg_query
-from google.genai import Client, types 
+from papaya.github_utils import get_repo_contents, get_file_contents
+from papaya.postgres_utils import make_pg_query
+from google.genai import Client, types
 from dotenv import load_dotenv
 import os
 from pydantic import BaseModel
@@ -32,10 +32,10 @@ Relevant Code: {self.relevant_code} \n\n
 Hypothesis: {self.hypothesis} \n\n
 Suggested Fix: {self.suggested_fix}
 """
-    
+
     def parse_final_message(final_message: str):
         pass
-    
+
 
 def get_system_prompt(logs, codebase_structure):
 
@@ -73,7 +73,7 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_j
             "required": ["path"],
         },
     }]
-    
+
     tools = types.Tool(function_declarations=tool_definitions)
     config = types.GenerateContentConfig(tools=[tools], response_schema=Report)
     contents = [
@@ -91,7 +91,7 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_j
     print(response.function_calls)
 
     # Keep processing while there are function calls in any part
-    while response.function_calls: 
+    while response.function_calls:
         # Handle each function call
         for function_call in response.function_calls:
             if function_call.name == "read_github_file":
@@ -111,7 +111,7 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_j
             config=config,
         )
 
-    return response.text 
+    return response.text
 
 
 if __name__ == "__main__":

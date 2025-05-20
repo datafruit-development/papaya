@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="spark-debugger",
+    name="papaya-debugger",
     version="0.1.0",
     description="Spark debugging and monitoring framework",
     packages=find_packages(),
@@ -12,5 +12,11 @@ setup(
         "google-genai>=1.14.0",
         "pygithub>=2.6.1",
         "python-dotenv>=1.0.0",
+        "requests>=2.32.0",
     ],
+    entry_points={
+        'console_scripts': [
+            'papaya=papaya.cli:main',
+        ],
+    },
 )

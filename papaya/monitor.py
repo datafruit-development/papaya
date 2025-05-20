@@ -18,9 +18,9 @@ from urllib.parse import urljoin
 import requests
 from dotenv import load_dotenv
 
-from analyze_failure import analyze_failure
-from discord_utils  import send_discord_message, start_discord_bot
-from code_repair    import repair_code
+from papaya.analyze_failure import analyze_failure
+from papaya.discord_utils import send_discord_message, start_discord_bot
+from papaya.code_repair import repair_code
 
 load_dotenv()
 
