@@ -1,3 +1,33 @@
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "papaya-debugger"
+version = "0.1.0"
+description = "Intelligent debugging tool for Apache Spark jobs"
+readme = "README.md"
+authors = [{ name = "Lychee Development", email = "abhi@trylychee.dev" }]
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.13"
+dependencies = [
+    "discord.py>=2.3.2",
+    "google-genai>=1.14.0",
+    "pygithub>=2.6.1",
+    "python-dotenv>=1.0.0",
+    "requests>=2.32.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/lychee-development/papaya"
+"Bug Tracker" = "https://github.com/lychee-development/papaya/issues"
+
+[project.scripts]
+papaya = "papaya.cli:main"
