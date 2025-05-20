@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 from monitor import monitor_loop
+from typing import Optional, List
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -38,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="OWNER/REPO",
         help="GitHub repository of the Spark job (requires GH_APP_TOKEN env var)"
     )
-    p.add_argument(
+    parser.add_argument(
         "--poll",
         metavar="SECONDS",
         type=float,
