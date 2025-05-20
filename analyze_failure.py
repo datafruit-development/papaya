@@ -54,28 +54,31 @@ def get_system_prompt(logs, codebase_structure):
 
 # Logs structure is tbd, ingestion_data is tbd
 def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_job_id) -> Report:
-
-    codebase_structure = get_repo_contents(github_repo_owner, github_repo_url)
+    # Handle missing GitHub repo gracefully
+    if not github_repo_owner or not github_repo_url:
+        codebase_structure = "[GitHub repository not provided; codebase structure unavailable.]"
+        tool_definitions = []
+    else:
+        codebase_structure = get_repo_contents(github_repo_owner, github_repo_url)
+        tool_definitions = [{
+            "name": "read_github_file",
+            "description": "Returns the contents of a file from the Github repository.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to read.",
+                    },
+                },
+                "required": ["path"],
+            },
+        }]
 
     system_prompt = get_system_prompt(logs, codebase_structure)
 
-    tool_definitions = [{
-        "name": "read_github_file",
-        "description": "Returns the contents of a file from the Github repository.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to read.",
-                },
-            },
-            "required": ["path"],
-        },
-    }]
-    
-    tools = types.Tool(function_declarations=tool_definitions)
-    config = types.GenerateContentConfig(tools=[tools], response_schema=Report)
+    tools = types.Tool(function_declarations=tool_definitions) if tool_definitions else None
+    config = types.GenerateContentConfig(tools=[tools], response_schema=Report) if tools else types.GenerateContentConfig(response_schema=Report)
     contents = [
         types.Content(role="user", parts=[{"text": system_prompt}])
     ]
@@ -88,10 +91,8 @@ def analyze_failure(logs, github_repo_owner, github_repo_url, pg_db_url, spark_j
     )
 
 
-    print(response.function_calls)
-
-    # Keep processing while there are function calls in any part
-    while response.function_calls: 
+    # Only process function calls if tools are defined
+    while hasattr(response, 'function_calls') and response.function_calls and tool_definitions:
         # Handle each function call
         for function_call in response.function_calls:
             if function_call.name == "read_github_file":

@@ -282,9 +282,8 @@ def monitor_loop(
                     # ---------------- analyze / notify / repair ----------
                     report = analyze_failure(
                         log_txt,
-                        # The three args your original fn expected
-                        os.getenv("GITHUB_REPO_OWNER"),
-                        os.getenv("GITHUB_REPO_URL"),
+                        os.getenv("GITHUB_REPO_OWNER") if github_repo else None,
+                        os.getenv("GITHUB_REPO_URL") if github_repo else None,
                         os.getenv("PG_DB_URL"),
                         state["app_id"],
                     )
