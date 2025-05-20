@@ -4,6 +4,8 @@ import asyncio
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+import io
+from typing import Union
 
 # Configure logging
 logging.basicConfig(
@@ -25,6 +27,9 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Global variable to store the bot's event loop
+bot_loop = None
+
 @bot.event
 async def on_ready():
     """Event handler for when the bot is ready and connected to Discord."""
@@ -36,13 +41,71 @@ async def status(ctx):
     """Command to check the bot status."""
     await ctx.send(f"Spark Pipeline Debugger is online! Monitoring for failures.")
 
-# use this to connect to spark
-async def send_discord_message(message: str, channel_id: int = None):
+def run_in_bot_loop(coro):
+    """
+    Run a coroutine in the bot's event loop from any thread.
+    """
+    global bot_loop
+    if bot_loop and bot_loop.is_running():
+        import concurrent.futures
+        future = asyncio.run_coroutine_threadsafe(coro, bot_loop)
+        try:
+            return future.result()  # Wait for result and propagate exceptions
+        except concurrent.futures.TimeoutError:
+            logger.error("Timed out waiting for Discord coroutine to finish.")
+            return False
+        except Exception as e:
+            logger.error(f"Exception in Discord coroutine: {e}")
+            return False
+    else:
+        logger.error("Bot event loop is not running.")
+        return False
+
+async def send_long_message(channel: discord.TextChannel, content: str):
+    """
+    Handles sending long messages to Discord by either:
+    1. Using an embed for messages up to 6000 chars
+    2. Splitting into multiple messages for medium length content
+    3. Uploading as a file for very long content
+    
+    Args:
+        channel: The Discord channel to send to
+        content: The message content
+    """
+    if len(content) <= 2000:
+        # Regular message
+        await channel.send(content)
+    elif len(content) <= 6000:
+        # Use embed for longer messages
+        embed = discord.Embed(
+            description=content,
+            color=discord.Color.blue()
+        )
+        await channel.send(embed=embed)
+    elif len(content) <= 10000:
+        # Split into multiple messages
+        while content:
+            # Find last newline before 2000 chars if possible
+            split_point = content[:2000].rfind('\n')
+            if split_point == -1:
+                split_point = 2000
+            
+            await channel.send(content[:split_point])
+            content = content[split_point:].lstrip()
+    else:
+        # Send as file for very long content
+        file = discord.File(
+            io.StringIO(content),
+            filename="report.txt"
+        )
+        await channel.send("Report (see attached file):", file=file)
+
+async def send_discord_message(message: Union[str, discord.Embed], channel_id: int = None):
     """
     Send a message to a specific Discord channel.
 
     Args:
-        message (str): The message to send
+        message (Union[str, discord.Embed]): The message to send or an embed
         channel_id (int): The ID of the channel to send the message to
     """
     if not DISCORD_TOKEN:
@@ -61,13 +124,22 @@ async def send_discord_message(message: str, channel_id: int = None):
             logger.error(f"Could not find channel with ID {channel_id}")
             return False
 
-        # Send the message
-        await channel.send(message)
+        # Send the message based on type
+        if isinstance(message, discord.Embed):
+            await channel.send(embed=message)
+        else:
+            await send_long_message(channel, str(message))
         return True
 
     except Exception as e:
         logger.error(f"Error sending message to Discord: {str(e)}")
         return False
+
+def send_discord_message_threadsafe(message: str, channel_id: int = None):
+    """
+    Thread-safe wrapper for send_discord_message.
+    """
+    return run_in_bot_loop(send_discord_message(message, channel_id))
 
 async def send_failure_alert(failure_type: str, details: dict, channel_id: int = None):
     """
@@ -125,6 +197,12 @@ async def send_failure_alert(failure_type: str, details: dict, channel_id: int =
         logger.error(f"Error sending failure alert to Discord: {str(e)}")
         return False
 
+def send_failure_alert_threadsafe(failure_type: str, details: dict, channel_id: int = None):
+    """
+    Thread-safe wrapper for send_failure_alert.
+    """
+    return run_in_bot_loop(send_failure_alert(failure_type, details, channel_id))
+
 def start_discord_bot():
     """
     Start the Discord bot in a non-blocking way.
@@ -136,8 +214,10 @@ def start_discord_bot():
 
     # Run the bot in a separate thread
     def run_bot_thread():
+        global bot_loop
         # Create a new event loop for this thread
         loop = asyncio.new_event_loop()
+        bot_loop = loop  # Store the loop globally
         asyncio.set_event_loop(loop)
 
         try:

@@ -19,7 +19,7 @@ import requests
 from dotenv import load_dotenv
 
 from papaya.analyze_failure import analyze_failure
-from papaya.discord_utils import send_discord_message, start_discord_bot
+from papaya.discord_utils import send_discord_message_threadsafe, start_discord_bot
 from papaya.code_repair import repair_code
 
 load_dotenv()
@@ -292,14 +292,14 @@ async def monitor_loop(
                     print(report)
 
                     if discord_cid:
-                        await send_discord_message(report, int(discord_cid))
+                        send_discord_message_threadsafe(report, int(discord_cid))
 
                     if github_repo:
                         pr_url = repair_code(
                             github_repo.split("/")[0], github_repo, report
                         )
                         if pr_url and discord_cid:
-                            await send_discord_message(
+                            send_discord_message_threadsafe(
                                 f"🛠️  Code repair PR created: {pr_url}", int(discord_cid)
                             )
 
