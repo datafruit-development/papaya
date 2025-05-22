@@ -4,6 +4,7 @@ import os
 import sys
 from papaya.monitor import monitor_loop
 from typing import Optional, List
+import asyncio
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -30,9 +31,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # optional extras
     parser.add_argument(
-        "--discord-cid",
-        type=int,
-        help="Discord channel ID to send messages to (requires DISCORD_TOKEN env var)"
+        "--discord",
+        action="store_true",
+        help="Enable Discord notifications using DISCORD_CHANNEL_ID from .env"
     )
     parser.add_argument(
         "--github-repo",
@@ -53,22 +54,35 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if args.discord_cid and "DISCORD_TOKEN" not in os.environ:
-        parser.error("--discord-cid requires DISCORD_TOKEN to be set")
+    discord_cid = None
+    if args.discord:
+        discord_cid_env = os.getenv("DISCORD_CHANNEL_ID")
+        if discord_cid_env:
+            try:
+                discord_cid = int(discord_cid_env)
+            except ValueError:
+                parser.error("DISCORD_CHANNEL_ID in .env is not a valid integer")
+        else:
+            parser.error("--discord flag set but DISCORD_CHANNEL_ID not found in environment")
+
+    if discord_cid and "DISCORD_TOKEN" not in os.environ:
+        parser.error("--discord requires DISCORD_TOKEN to be set")
     if args.github_repo and "GH_APP_TOKEN" not in os.environ:
         parser.error("--github-repo requires GH_APP_TOKEN to be set")
 
     print("Initializing monitor for %s", args.url)
-    if args.discord_cid:
-        print("→ will notify Discord channel %s", args.discord_cid)
+    if discord_cid:
+        print("→ will notify Discord channel %s", discord_cid)
     if args.github_repo:
         print("→ will link to GitHub repo %s", args.github_repo)
 
-    monitor_loop(
-        spark_ui=args.url,
-        polling=args.poll,
-        discord_cid=args.discord_cid,
-        github_repo=args.github_repo,
+    asyncio.run(
+        monitor_loop(
+            spark_ui=args.url,
+            polling=args.poll,
+            discord_cid=discord_cid,
+            github_repo=args.github_repo,
+        )
     )
 
 
