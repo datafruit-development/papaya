@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "papaya-debugger"
-version = "0.1.0"
+version = "0.1.1"
 description = "Intelligent debugging tool for Apache Spark jobs"
 readme = "README.md"
 authors = [{ name = "Lychee Development", email = "abhi@trylychee.dev" }]
@@ -16,7 +16,7 @@ classifiers = [
     "Topic :: Software Development :: Debuggers",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "discord.py>=2.3.2",
     "google-genai>=1.14.0",
