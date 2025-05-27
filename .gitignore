@@ -1,13 +1,41 @@
-# Python-generated files
+# ----------------------
+# Python build artifacts
+# ----------------------
 __pycache__/
-*.py[oc]
+*.py[co]
+*.pyo
+*.pyd
+*.so
+*.dylib
+
+# Build & packaging
 build/
 dist/
+*.egg-info/
 wheels/
-*.egg-info
 
 # Virtual environments
-.venv
+.venv/
+env/
+venv/
 
-# scala
+# ---------------------
+# Scala / SBT artifacts
+# ---------------------
+# Ignore all target folders recursively...
 target/
+plugin/target/
+plugin/project/target/
+
+# ...except plugin_jars JARs
+!papaya/plugin_jars/
+!papaya/plugin_jars/*.jar
+
+# ---------------------
+# Editor / system files
+# ---------------------
+.DS_Store
+.ropeproject
+.idea/
+*.iml
+*.log
