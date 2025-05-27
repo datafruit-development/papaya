@@ -31,7 +31,7 @@ def load_plugin():
         raise FileNotFoundError(f"[papaya] No plugin JAR found for Spark {spark_ver[:3]}, Scala {scala_ver} in {jar_dir}")
 
     jar_path = matching_jars[0]  # First match
-    plugin_class = "datafruit.TestPlugin"
+    plugin_class = "datafruit.PapayaObservabilityPlugin"
 
     # Compose Spark submit args
     user_args = os.environ.get("PYSPARK_SUBMIT_ARGS", "")

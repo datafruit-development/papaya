@@ -3,7 +3,7 @@ package datafruit
 import org.apache.spark.SparkContext
 import org.apache.spark.api.plugin._
 
-class TestPlugin extends SparkPlugin {
+class PapayaObservabilityPlugin extends SparkPlugin {
   override def driverPlugin(): DriverPlugin = new TestDriver
   override def executorPlugin(): ExecutorPlugin = new TestExecutor
 }
