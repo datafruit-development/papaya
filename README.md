@@ -1,8 +1,8 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/lychee-development/papaya/blob/main/docs/logo_dark.svg?raw=true">
-    <source media="(prefers-color-scheme: light)" srcset="https://github.com/lychee-development/papaya/blob/main/docs/logo_light.svg?raw=true">
-    <img alt="Papaya Logo" src="https://github.com/lychee-development/papaya/blob/main/docs/logo_light.svg?raw=true" width="300" style="display: block; margin: 0 auto;">
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/datafruit-development/papaya/blob/main/docs/logo_dark.svg?raw=true">
+    <source media="(prefers-color-scheme: light)" srcset="https://github.com/datafruit-development/papaya/blob/main/docs/logo_light.svg?raw=true">
+    <img alt="Papaya Logo" src="https://github.com/datafruit-development/papaya/blob/main/docs/logo_light.svg?raw=true" width="300" style="display: block; margin: 0 auto;">
   </picture>
 </p>
 

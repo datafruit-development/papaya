@@ -7,7 +7,7 @@ name = "papaya-debugger"
 version = "0.1.1"
 description = "Intelligent debugging tool for Apache Spark jobs"
 readme = "README.md"
-authors = [{ name = "Lychee Development", email = "abhi@trylychee.dev" }]
+authors = [{ name = "Datafruit Development", email = "abhi@datafruit.dev" }]
 license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -26,8 +26,8 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/lychee-development/papaya"
-"Bug Tracker" = "https://github.com/lychee-development/papaya/issues"
+"Homepage" = "https://github.com/datafruit-development/papaya"
+"Bug Tracker" = "https://github.com/datafruit-development/papaya/issues"
 
 [project.scripts]
 papaya = "papaya.cli:main"

@@ -10,10 +10,10 @@ load_dotenv()
 def get_github_client(token: Optional[str] = None) -> Github:
     """
     Creates and returns a GitHub client instance.
-    
+
     Args:
         token: GitHub Personal Access Token. If None, uses GH_APP_TOKEN env var.
-        
+
     Returns:
         An authenticated Github client instance.
     """
@@ -40,7 +40,7 @@ def get_repo_contents(owner: str, repo: str, path: str = "", token: Optional[str
 
     gh = get_github_client(token)
     repository = gh.get_repo(f"{owner}/{repo}")
-    
+
     try:
         contents = repository.get_contents(path.lstrip('/') if path else '')
         # If it's a single file, wrap it in a list for consistent return type
@@ -71,7 +71,7 @@ def get_file_contents(owner: str, repo: str, path: str, token: Optional[str] = N
 
     gh = get_github_client(token)
     repository = gh.get_repo(f"{owner}/{repo}")
-    
+
     try:
         return repository.get_contents(path.lstrip('/'))
     except Exception as e:
@@ -80,7 +80,7 @@ def get_file_contents(owner: str, repo: str, path: str, token: Optional[str] = N
 
 def make_code_change(owner: str, repo: str, new_content: dict, branch_name: str = None, commit_message: str = None, pr_title: str = None, pr_body: str = None):
     """
-    Makes a code change to a file in a repository on a Lychee-specific feature branch, and makes a PR.
+    Makes a code change to a file in a repository on a Datafruit-specific feature branch, and makes a PR.
 
     Args:
         owner: The owner of the repository.
@@ -106,7 +106,7 @@ def make_code_change(owner: str, repo: str, new_content: dict, branch_name: str 
     if not branch_name:
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        branch_name = f"lychee/fix_{timestamp}"
+        branch_name = f"datafruit/fix_{timestamp}"
 
     # Create new branch from default branch
     try:
@@ -148,8 +148,8 @@ def make_code_change(owner: str, repo: str, new_content: dict, branch_name: str 
     # Create pull request
     try:
         pr = repository.create_pull(
-            title=pr_title or f"Lychee: Updates from {branch_name}",
-            body=pr_body or "Automated pull request created by Lychee",
+            title=pr_title or f"Datafruit: Updates from {branch_name}",
+            body=pr_body or "Automated pull request created by Datafruit",
             head=branch_name,
             base=default_branch
         )
@@ -163,7 +163,7 @@ def make_code_change(owner: str, repo: str, new_content: dict, branch_name: str 
             pass
         raise Exception(f"Failed to create pull request: {str(e)}")
 
-    
+
 
 if __name__ == "__main__":
-    print(get_repo_contents("lychee-development", "spark_debugger_demo"))
+    print(get_repo_contents("Datafruit-development", "spark_debugger_demo"))

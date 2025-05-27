@@ -111,6 +111,6 @@ You should respond with the following format:
 
 
 if __name__ == "__main__":
-    response = repair_code("lychee-development", "spark_debugger_demo", "the whole coebase is broken. ")
+    response = repair_code("datafruit-development", "spark_debugger_demo", "the whole coebase is broken. ")
 
     print("Response: ", response)
