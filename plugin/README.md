@@ -1,4 +1,4 @@
-# Dev reference
+# developer reference
 
 quick guide if you are a developer making changes to the spark plugin itself (for macOS/Linux)
 
