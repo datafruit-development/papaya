@@ -1,9 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "papaya"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-    "pyspark==3.5.5",
-]
+description = "Observability tools for Apache Spark"
+authors = [{ name = "Datafruit", email = "founders@datafruit.dev" }]
+requires-python = ">=3.8"
+dependencies = ["pyspark==3.5.5"]
+
+[project.scripts]
+papaya-submit = "papaya.cli.papaya_submit:main"
+
+[tool.setuptools]
+packages = ["papaya"]
+
+[tool.setuptools.package-data]
+papaya = ["plugin_jars/*.jar"]
