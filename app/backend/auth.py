@@ -8,7 +8,7 @@ load_dotenv()
 
 supabase = create_client(
     os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    os.getenv("SUPABASE_KEY")
 )
 
 async def verify_api_key(request: Request):
