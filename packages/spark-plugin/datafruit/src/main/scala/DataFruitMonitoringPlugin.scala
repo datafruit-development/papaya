@@ -262,7 +262,7 @@ class SparkMetricsCollector {
       "timestamp" -> System.currentTimeMillis(),
       "application_id" -> SparkContext.getOrCreate().applicationId,
       "application_name" -> SparkContext.getOrCreate().appName,
-      "metrics" -> getMetricsSummary,
+      "metrics" -> getSchemaCompliantMetrics, // change to conform api spec
       "recent_exceptions" -> getRecentExceptions(10),
       "active_performance_issues" -> getActivePerformanceIssues,
       "recent_cpu_snapshots" -> getRecentCpuSnapshots(5),
@@ -271,6 +271,49 @@ class SparkMetricsCollector {
     )
   }
 
+  // New method that matches the schema exactly (removing success rate)
+  def getSchemaCompliantMetrics: Map[String, Any] = {
+    Map(
+      "jobs" -> Map(
+        "submitted" -> jobsSubmitted.get(),
+        "succeeded" -> jobsSucceeded.get(),
+        "failed" -> jobsFailed.get()
+      ),
+      "stages" -> Map(
+        "submitted" -> stagesSubmitted.get(),
+        "completed" -> stagesCompleted.get(),
+        "failed" -> stagesFailed.get(),
+        "skipped" -> stagesSkipped.get()
+      ),
+      "tasks" -> Map(
+        "launched" -> tasksLaunched.get(),
+        "completed" -> tasksCompleted.get(),
+        "failed" -> tasksFailed.get(),
+        "killed" -> tasksKilled.get(),
+        "skipped" -> tasksSkipped.get()
+      ),
+      "executors" -> Map(
+        "added" -> executorsAdded.get(),
+        "removed" -> executorsRemoved.get(),
+        "blacklisted" -> executorsBlacklisted.get(),
+        "unblacklisted" -> executorsUnblacklisted.get()
+      ),
+      "performance" -> Map(
+        "gcTimeTotalMs" -> gcTimeTotal.get(),
+        "ioTimeTotalMs" -> ioTimeTotal.get(),
+        "shuffleReadBytes" -> shuffleReadBytes.get(),
+        "shuffleWriteBytes" -> shuffleWriteBytes.get(),
+        "diskSpillBytes" -> diskSpillBytes.get(),
+        "memorySpillBytes" -> memorySpillBytes.get()
+      ),
+      "snapshots" -> Map(
+        "cpuSnapshotsCollected" -> cpuSnapshots.size,
+        "memorySnapshotsCollected" -> memorySnapshots.size
+      ),
+      "exceptions" -> exceptions.length,
+      "performanceIssues" -> performanceIssues.length
+    )
+  }
   def getRecentExceptions(limit: Int): List[Map[String, Any]] = {
     exceptions.synchronized {
       exceptions.takeRight(limit).map { ex =>
