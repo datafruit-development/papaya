@@ -1,0 +1,35 @@
+---
+title: "Developer quick start"
+description: "get up and running with papaya quickly"
+---
+
+Given existing pyspark code all we need to do to load papaya is 
+
+```python
+import papaya
+papaya.load_plugin() 
+```
+
+before loading any Spark code. For example, 
+
+```python
+import papaya
+papaya.load_plugin() # do before loading Spark
+
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder \
+	.appName("TrivialSparkTest") \
+	.getOrCreate()
+
+# Do something trivial
+df = spark.createDataFrame([(1, "one"), (2, "two")], ["id", "label"])
+df.show()
+spark.stop()
+```
+
+and run 
+
+```
+papaya-submit trivial.py
+```
