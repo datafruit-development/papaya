@@ -689,7 +689,8 @@ class DataFruitDriverPlugin extends DriverPlugin with Logging {
   private var metricsCollector: SparkMetricsCollector = _
   private var sparkListener: DataFruitSparkListener = _
   private val mapper = new ObjectMapper().registerModule(DefaultScalaModule)
-
+  private val CUSTOMER_WEBHOOK_URL: String = ""
+  private val CUSTOMER_API_KEY: String = ""
   override def init(sc: SparkContext, ctx: PluginContext): java.util.Map[String, String] = {
     sparkContext = sc
     metricsCollector = new SparkMetricsCollector()
@@ -728,8 +729,8 @@ class DataFruitDriverPlugin extends DriverPlugin with Logging {
   }
 
   private def reportMetrics(): Unit = {
-    val webhookUrl = sparkContext.getConf.get("spark.datafruit.webhook.url", "")
-    val apiKey = sparkContext.getConf.get("spark.datafruit.api.key", "your_default_api_key_here")
+    val webhookUrl = CUSTOMER_WEBHOOK_URL
+    val apiKey = CUSTOMER_API_KEY
     val webhookTimeout = sparkContext.getConf.getInt("spark.datafruit.webhook.timeout", 30)
     val webhookRetries = sparkContext.getConf.getInt("spark.datafruit.webhook.retries", 3)
 
@@ -791,8 +792,8 @@ class DataFruitDriverPlugin extends DriverPlugin with Logging {
   }
 
   def sendUrgentAlert(alertType: String, message: String, severity: String): Unit = {
-    val webhookUrl = sparkContext.getConf.get("spark.datafruit.webhook.url", "")
-    val apiKey = sparkContext.getConf.get("spark.datafruit.api.key", "your_default_api_key_here")
+    val webhookUrl = CUSTOMER_WEBHOOK_URL
+    val apiKey = CUSTOMER_API_KEY
     
     if (webhookUrl.nonEmpty) {
       try {
