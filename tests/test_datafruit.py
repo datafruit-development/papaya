@@ -32,7 +32,8 @@ class TestProfile(SQLModel, table=True):
 
 @pytest.fixture
 def postgresql_db_conn_str(postgresql):
-    return postgresql.info.dsn()
+    connection = f'postgresql+psycopg2://{postgresql.info.user}:@{postgresql.info.host}:{postgresql.info.port}/{postgresql.info.dbname}'
+    return connection
 
 @pytest.fixture
 def db_instance(postgresql_db_conn_str):
