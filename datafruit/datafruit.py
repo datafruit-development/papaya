@@ -3,6 +3,16 @@ from sqlalchemy import inspect, MetaData
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
+"""
+---- OPEN ISSUES ----
+
+1. Type compatibility checks are too basic and may lead to false positives/negatives.
+2. Altering existing tables to match the model schema is not implemented in sync_local_to_online.
+3. Does not handle foreign key relations - need to implement a way to create, check, and sync foreign keys.
+"""
+
+
+
 class postgres_db:
     def __init__(self, connection_string: str, tables: list[type[SQLModel]]):
         self.connection_string = connection_string
@@ -138,8 +148,6 @@ class postgres_db:
                         print(f"  Type mismatches: {differences['type_mismatches']}")
                     
                     # TODO: Implement table alteration logic here
-                    # You would need to use ALTER TABLE statements via SQLAlchemy
-                    # or recreate the table (with data migration)
                 else:
                     print(f"Table {table_name} is up to date")
 
