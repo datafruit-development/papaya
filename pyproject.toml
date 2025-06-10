@@ -10,3 +10,11 @@ dependencies = [
     "sqlalchemy>=2.0.41",
     "sqlmodel>=0.0.24",
 ]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-postgresql>=7.0.2",
+    "psycopg[binary]",  # psycopg3 with binary package
+    "pytest>=8.4.0",
+]
