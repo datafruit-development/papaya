@@ -50,7 +50,7 @@ class ForeignKeyManager:
         self.inspector = inspect(engine)
         
     def get_online_foreign_keys(self, schema: str = 'public') -> Dict[str, List[ForeignKeyInfo]]: 
-        """Extradt all foreign keys from existing database""" 
+        """Extract all foreign keys from existing database"""
         foreign_keys: Dict[str, List[ForeignKeyInfo]] = {}
         fk_query = text("""
             SELECT
