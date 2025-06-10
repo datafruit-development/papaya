@@ -185,7 +185,7 @@ class ForeignKeyManager:
         for table_name, fks in model_fks.items():
             for fk in fks:
                 if fk.target_table in table_to_model:
-                    graph.add_edge(fk.target_table, table_name)
+                    graph.add_edge(table_name, fk.target_table)
         
         try:
             sorted_tables = list(nx.topological_sort(graph))
