@@ -64,7 +64,7 @@ class ForeignKeyManager:
         self.inspector = inspect(engine)
         
     def get_online_foreign_keys(self, schema: str = 'public') -> Dict[str, List[ForeignKeyInfo]]: 
-        """Extradt all foreign keys from existing database""" 
+        """Extract all foreign keys from existing database"""
         foreign_keys: Dict[str, List[ForeignKeyInfo]] = {}
         fk_query = text("""
             SELECT
@@ -199,7 +199,7 @@ class ForeignKeyManager:
         for table_name, fks in model_fks.items():
             for fk in fks:
                 if fk.target_table in table_to_model:
-                    graph.add_edge(fk.target_table, table_name)
+                    graph.add_edge(table_name, fk.target_table)
         
         try:
             sorted_tables = list(nx.topological_sort(graph))
