@@ -2,6 +2,10 @@ from sqlmodel import SQLModel, create_engine, Session, text
 from sqlalchemy import inspect, MetaData
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from dataclasses import dataclass
+from enum import Enum
+import networkx as nx 
+
 
 """
 ---- OPEN ISSUES ----
@@ -12,7 +16,168 @@ from datetime import datetime
 """
 
 
+# class for foreign key actions and relations
+class FKAction(Enum): 
+    # cascade, restrict, set null, set default, no action 
+    CASCADE = "CASCADE"
+    RESTRICT = "RESTRICT"
+    SET_NULL = "SET NULL"
+    SET_DEFAULT = "SET DEFAULT"
+    NO_ACTION = "NO ACTION"
+    
+@dataclass
+class ForeignKeyInfo:
+    """Represents a foreign key constraint"""
+    name: str
+    source_table: str
+    source_columns: List[str]
+    target_table: str
+    target_columns: List[str]
+    on_delete: FKAction = FKAction.NO_ACTION
+    on_update: FKAction = FKAction.NO_ACTION
+    def __hash__(self):
+        return hash(self.name)
+    def get_signature(self) -> str: 
+        """Create a unique signature for comparison, without the name"""
+        return (f"{self.source_table}:{','.join(sorted(self.source_columns))}" 
+                f"->{self.target_table}:{','.join(sorted(self.target_columns))}")
+ 
 
+class ForeignKeyManager: 
+    """Handles foreign key operations for schema synchronization"""
+    def __init__(self, engine):
+        self.engine = engine 
+        self.inspector = inspect(engine)
+        
+    def get_online_foreign_keys(self, schema: str = 'public') -> Dict[str, List[ForeignKeyInfo]]: 
+        """Extradt all foreign keys from existing database""" 
+        foreign_keys = {}
+        for table_name in self.inspector.get_table_names(schema=schema):
+            fks = []
+            for fk_info in self.inspector.get_foreign_keys(table_name, schema=schema):
+                fk = ForeignKeyInfo(
+                    name=fk_info['name'],
+                    source_table=table_name,
+                    source_columns=fk_info['constrained_columns'],
+                    target_table=fk_info['referred_table'],
+                    target_columns=fk_info['referred_columns'],
+                    on_delete=FKAction(fk_info.get('ondelete', 'NO ACTION')),
+                    on_update=FKAction(fk_info.get('onupdate', 'NO ACTION'))
+                )
+                fks.append(fk)
+            foreign_keys[table_name] = fks
+        
+        return foreign_keys
+    
+    def get_model_foreign_keys(self, models: List[type[SQLModel]]) -> Dict[str, List[ForeignKeyInfo]]:
+        """Extract foreign keys from SQLModel definitions"""
+        foreign_keys = {}
+        
+        for model in models:
+            table_name = model.__tablename__
+            fks = []
+            
+            if hasattr(model, '__table__'):
+                # Correct way to access foreign keys
+                for column in model.__table__.columns:
+                    if column.foreign_keys:
+                        for fk in column.foreign_keys:
+                            fk_info = ForeignKeyInfo(
+                                name=fk.constraint.name or f"fk_{table_name}_{column.name}",
+                                source_table=table_name,
+                                source_columns=[column.name],
+                                target_table=fk.column.table.name,
+                                target_columns=[fk.column.name],
+                                on_delete=FKAction(fk.ondelete or 'NO ACTION'),
+                                on_update=FKAction(fk.onupdate or 'NO ACTION')
+                            )
+                            fks.append(fk_info)
+            
+            foreign_keys[table_name] = fks
+        
+        return foreign_keys  
+        
+    def compare_foreign_keys(self, model_fks: Dict[str, List[ForeignKeyInfo]], 
+                            online_fks: Dict[str, List[ForeignKeyInfo]]) -> Dict [str, Any]:
+        """Compare foreign keys between model and database"""
+        differences = {
+            'missing_fks': [],
+            'extra_fks': [],
+            'modified_fks': [],
+        }
+        
+        all_tables = set(model_fks.keys()) | set(online_fks.keys())
+        
+        for table_name in all_tables:
+            model_table_fks = {fk.name: fk for fk in model_fks.get(table_name, [])}
+            online_table_fks = {fk.name: fk for fk in online_fks.get(table_name, [])}
+            
+            for fk_name, fk in model_table_fks.items():
+                if fk_name not in online_table_fks:
+                    differences['missing_fks'].append(fk)
+                elif not self._fks_equal(fk, online_table_fks[fk_name]):
+                    differences['modified_fks'].append({
+                        'model_fk': fk,
+                        'online_fk': online_table_fks[fk_name]
+                    })
+            
+            for fk_name, fk in online_table_fks.items():
+                if fk_name not in model_table_fks:
+                    differences['extra_fks'].append(fk)
+        
+        return differences
+    
+    def _fks_equal(self, fk1: ForeignKeyInfo, fk2: ForeignKeyInfo) -> bool:
+        """Compare two foreign key definitions for equality"""
+        return (fk1.source_columns == fk2.source_columns and
+                fk1.target_table == fk2.target_table and
+                fk1.target_columns == fk2.target_columns and
+                fk1.on_delete == fk2.on_delete and
+                fk1.on_update == fk2.on_update)
+    
+    def generate_fk_creation_order(self, models: List[type[SQLModel]]) -> List[type[SQLModel]]:
+        """Determine safe order for creating tables with foreign keys"""
+        graph = nx.DiGraph()
+        table_to_model = {model.__tablename__: model for model in models}
+        
+        for model in models:
+            graph.add_node(model.__tablename__)
+        
+        model_fks = self.get_model_foreign_keys(models)
+        for table_name, fks in model_fks.items():
+            for fk in fks:
+                if fk.target_table in table_to_model:
+                    graph.add_edge(fk.target_table, table_name)
+        
+        try:
+            sorted_tables = list(nx.topological_sort(graph))
+            return [table_to_model[table] for table in sorted_tables]
+        except nx.NetworkXError as e:
+            raise ValueError(f"Circular dependency detected in foreign keys: {e}")
+    
+    def generate_add_fk_ddl(self, fk: ForeignKeyInfo) -> str:
+        """Generate DDL to add a foreign key constraint"""
+        source_cols = ', '.join(fk.source_columns)
+        target_cols = ', '.join(fk.target_columns)
+        
+        ddl = f"""ALTER TABLE {fk.source_table} 
+                ADD CONSTRAINT {fk.name} 
+                FOREIGN KEY ({source_cols}) 
+                REFERENCES {fk.target_table} ({target_cols})"""
+        
+        if fk.on_delete != FKAction.NO_ACTION:
+            ddl += f"\n    ON DELETE {fk.on_delete.value}"
+        
+        if fk.on_update != FKAction.NO_ACTION:
+            ddl += f"\n    ON UPDATE {fk.on_update.value}"
+        
+        return ddl + ";"
+    
+    def generate_drop_fk_ddl(self, fk: ForeignKeyInfo) -> str:
+        """Generate DDL to drop a foreign key constraint"""
+        return f"ALTER TABLE {fk.source_table} DROP CONSTRAINT IF EXISTS {fk.name};"
+
+        
 class postgres_db:
     def __init__(self, connection_string: str, tables: list[type[SQLModel]]):
         self.connection_string = connection_string
