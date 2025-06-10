@@ -29,15 +29,6 @@ class postgres_db:
         Create a table from a SQLModel class.
         """
         model.metadata.create_all(self.engine, tables=[model.__table__])
-        
-    def compare_schemas(self, online_schema: MigrationContext) -> Dict[str, Any]:
-        """
-        Compare local model schema with online table schema.
-        Returns differences between schemas.
-        """
-        local_schema = MetaData()
-        diff = compare_metadata(online_schema, local_schema)
-        return diff
     
     def get_local_metadata(self) -> MetaData:
         """
