@@ -45,6 +45,11 @@ def db_with_tables(db_instance):
     db_instance.create_all_tables()
     return db_instance
 
+@pytest.fixture
+def empty_db_instance(postgresql_db_conn_str):
+    """Create a database instance without any tables"""
+    return postgres_db(postgresql_db_conn_str, [])
+
 def test_init_creates_engine(postgresql_db_conn_str):
     db = postgres_db(postgresql_db_conn_str, [TestUser])
     assert db.connection_string == postgresql_db_conn_str
