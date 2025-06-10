@@ -41,6 +41,20 @@ class ForeignKeyInfo:
         """Create a unique signature for comparison, without the name"""
         return (f"{self.source_table}:{','.join(sorted(self.source_columns))}" 
                 f"->{self.target_table}:{','.join(sorted(self.target_columns))}")
+        
+    def __eq__(self, other: Any) -> bool : 
+        if not isinstance(other, ForeignKeyInfo):
+            return NotImplemented
+            
+        # Compare everything except the name, which can differ.
+        if self.get_signature() != other.get_signature():
+            return False
+        if self.on_delete != other.on_delete:
+            return False
+        if self.on_update != other.on_update:
+            return False
+            
+        return True
  
 
 class ForeignKeyManager: 
