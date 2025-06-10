@@ -51,22 +51,53 @@ class ForeignKeyManager:
         
     def get_online_foreign_keys(self, schema: str = 'public') -> Dict[str, List[ForeignKeyInfo]]: 
         """Extradt all foreign keys from existing database""" 
-        foreign_keys = {}
-        for table_name in self.inspector.get_table_names(schema=schema):
-            fks = []
-            for fk_info in self.inspector.get_foreign_keys(table_name, schema=schema):
-                fk = ForeignKeyInfo(
-                    name=fk_info['name'],
-                    source_table=table_name,
-                    source_columns=fk_info['constrained_columns'],
-                    target_table=fk_info['referred_table'],
-                    target_columns=fk_info['referred_columns'],
-                    on_delete=FKAction(fk_info.get('ondelete', 'NO ACTION')),
-                    on_update=FKAction(fk_info.get('onupdate', 'NO ACTION'))
-                )
-                fks.append(fk)
-            foreign_keys[table_name] = fks
+        foreign_keys: Dict[str, List[ForeignKeyInfo]] = {}
+        fk_query = text("""
+            SELECT
+                tc.constraint_name,
+                tc.table_name AS source_table,
+                kcu.column_name AS source_column,
+                ccu.table_name AS target_table,
+                ccu.column_name AS target_column,
+                rc.update_rule AS on_update,
+                rc.delete_rule AS on_delete
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+              ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+            JOIN information_schema.constraint_column_usage AS ccu
+              ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+            JOIN information_schema.referential_constraints AS rc
+              ON tc.constraint_name = rc.constraint_name AND tc.table_schema = rc.constraint_schema
+            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = :schema
+        """)
         
+        with self.engine.connect() as connection:
+            result = connection.execute(fk_query, {'schema': schema})
+            
+            # Process results into ForeignKeyInfo objects, grouped by constraint name
+            processed_fks: Dict[str, ForeignKeyInfo] = {}
+            for row in result:
+                if row.constraint_name not in processed_fks:
+                    processed_fks[row.constraint_name] = ForeignKeyInfo(
+                        name=row.constraint_name,
+                        source_table=row.source_table,
+                        source_columns=[row.source_column],
+                        target_table=row.target_table,
+                        target_columns=[row.target_column],
+                        on_update=FKAction(row.on_update),
+                        on_delete=FKAction(row.on_delete)
+                    )
+                else:
+                    # Append columns for composite keys
+                    processed_fks[row.constraint_name].source_columns.append(row.source_column)
+                    processed_fks[row.constraint_name].target_columns.append(row.target_column)
+
+            # Group by source table name for the final output
+            for fk in processed_fks.values():
+                if fk.source_table not in foreign_keys:
+                    foreign_keys[fk.source_table] = []
+                foreign_keys[fk.source_table].append(fk)
+
         return foreign_keys
     
     def get_model_foreign_keys(self, models: List[type[SQLModel]]) -> Dict[str, List[ForeignKeyInfo]]:
@@ -106,34 +137,41 @@ class ForeignKeyManager:
             'modified_fks': [],
         }
         
-        all_tables = set(model_fks.keys()) | set(online_fks.keys())
+        # dictionaries into maps of {name: fk_object} for efficient lookup
+        model_fk_map = {fk.name: fk for fks in model_fks.values() for fk in fks}
+        online_fk_map = {fk.name: fk for fks in online_fks.values() for fk in fks}
         
-        for table_name in all_tables:
-            model_table_fks = {fk.name: fk for fk in model_fks.get(table_name, [])}
-            online_table_fks = {fk.name: fk for fk in online_fks.get(table_name, [])}
+        model_fk_names = set(model_fk_map.keys())
+        online_fk_names = set(online_fk_map.keys())
+        
+        # find missing FKs in model but not in DB
+        for fk_name in model_fk_names - online_fk_names:
+            differences['missing_fks'].append(model_fk_map[fk_name])
             
-            for fk_name, fk in model_table_fks.items():
-                if fk_name not in online_table_fks:
-                    differences['missing_fks'].append(fk)
-                elif not self._fks_equal(fk, online_table_fks[fk_name]):
-                    differences['modified_fks'].append({
-                        'model_fk': fk,
-                        'online_fk': online_table_fks[fk_name]
-                    })
+        # find extra FKs in DB but not in model
+        for fk_name in online_fk_names - model_fk_names:
+            differences['extra_fks'].append(online_fk_map[fk_name])
             
-            for fk_name, fk in online_table_fks.items():
-                if fk_name not in model_table_fks:
-                    differences['extra_fks'].append(fk)
+        # find modified FKs (in both but different)
+        for fk_name in model_fk_names & online_fk_names:
+            model_fk = model_fk_map[fk_name]
+            online_fk = online_fk_map[fk_name]
+            if not self._fks_equal(model_fk, online_fk):
+                differences['modified_fks'].append({
+                    'model_fk': model_fk,
+                    'online_fk': online_fk
+                })
         
         return differences
-    
     def _fks_equal(self, fk1: ForeignKeyInfo, fk2: ForeignKeyInfo) -> bool:
         """Compare two foreign key definitions for equality"""
-        return (fk1.source_columns == fk2.source_columns and
-                fk1.target_table == fk2.target_table and
-                fk1.target_columns == fk2.target_columns and
-                fk1.on_delete == fk2.on_delete and
-                fk1.on_update == fk2.on_update)
+        if fk1.get_signature() != fk2.get_signature():
+            return False
+        if fk1.on_delete != fk2.on_delete:
+            return False
+        if fk1.on_update != fk2.on_update:
+            return False
+        return True
     
     def generate_fk_creation_order(self, models: List[type[SQLModel]]) -> List[type[SQLModel]]:
         """Determine safe order for creating tables with foreign keys"""
