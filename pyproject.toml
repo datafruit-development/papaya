@@ -6,7 +6,16 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "psycopg2-binary>=2.9.10",
+    "pytest-postgresql>=7.0.2",
     "python-dotenv>=1.1.0",
     "sqlalchemy>=2.0.41",
     "sqlmodel>=0.0.24",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-postgresql",
+    "psycopg[binary]",  # psycopg3 with binary package
+    "pytest>=8.4.0",
 ]
