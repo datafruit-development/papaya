@@ -35,7 +35,6 @@ class postgres_db:
         """
         Create a table from a SQLModel class.
         """
-        # This creates only the specific table
         model.metadata.create_all(self.engine, tables=[model.__table__])
         
     def get_model_schema(self, model: type[SQLModel]) -> Dict[str, Any]:
@@ -83,7 +82,7 @@ class postgres_db:
             if col_name in online_dict:
                 model_type = str(model_schema[col_name]['type']).upper()
                 online_type = online_dict[col_name].upper()
-                # This is a simplified comparison - you might need more sophisticated type mapping
+                # This comparison is probably too basic and will be buggy - needs to be improved
                 if not self._types_compatible(model_type, online_type):
                     differences['type_mismatches'].append({
                         'column': col_name,
@@ -156,8 +155,6 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
 
-
-    
     class users(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
         username: str = Field(unique=True)
