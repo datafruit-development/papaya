@@ -1,17 +1,9 @@
-from sqlmodel import SQLModel, create_engine, Session, text
-from sqlalchemy import inspect, MetaData
+from sqlalchemy import inspect, MetaData, create_engine, Engine 
+from alembic.migration import MigrationContext 
+from alembic.autogenerate import compare_metadata
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-
-"""
----- OPEN ISSUES ----
-
-1. Type compatibility checks are too basic and may lead to false positives/negatives.
-2. Altering existing tables to match the model schema is not implemented in sync_local_to_online.
-3. Does not handle foreign key relations - need to implement a way to create, check, and sync foreign keys.
-"""
-
-
+from sqlmodel import SQLModel
 
 class postgres_db:
     def __init__(self, connection_string: str, tables: list[type[SQLModel]]):
@@ -19,27 +11,18 @@ class postgres_db:
         self.tables = tables
         self.engine = create_engine(self.connection_string)
         
-    def connect(self) -> Session:
+    def connect(self) -> Engine:
         """
-        Create a SQLModel Session for database operations.
-        Returns a SQLModel Session object.
+        returns a SQLAlchemy engine connected to the database. 
         """
-        return Session(self.engine)
+        return create_engine(self.connection_string)
         
-    def list_online_tables(self) -> List[str]:
-        """
-        List all tables in the public schema.
-        """
-        inspector = inspect(self.engine)
-        return inspector.get_table_names(schema='public')
-    
-    def get_online_table_schema(self, table_name: str) -> List[tuple[str, str]]:
+    def get_online_db_schema(self) -> MigrationContext:
         """ 
-        Returns a list of the columns and their data types as tuples, [(column_name, data_type), ...]
+        returns the online database schema as a MigrationContext object.
         """
-        inspector = inspect(self.engine)
-        columns = inspector.get_columns(table_name, schema='public')
-        return [(col['name'], str(col['type'])) for col in columns]
+        mc = MigrationContext.configure(self.engine.connect())
+        return mc
     
     def create_table_from_model(self, model: type[SQLModel]):
         """
@@ -47,115 +30,39 @@ class postgres_db:
         """
         model.metadata.create_all(self.engine, tables=[model.__table__])
         
-    def get_model_schema(self, model: type[SQLModel]) -> Dict[str, Any]:
-        """
-        Extract schema information from a SQLModel class.
-        """
-        columns = {}
-        for column_name, column in model.__table__.columns.items():
-            columns[column_name] = {
-                'type': str(column.type),
-                'nullable': column.nullable,
-                'primary_key': column.primary_key,
-                'unique': column.unique,
-                'default': column.default,
-                'index': column.index
-            }
-        return columns
-    
-    def compare_schemas(self, model: type[SQLModel], online_schema: List[tuple[str, str]]) -> Dict[str, Any]:
+    def compare_schemas(self, online_schema: MigrationContext) -> Dict[str, Any]:
         """
         Compare local model schema with online table schema.
         Returns differences between schemas.
         """
-        model_schema = self.get_model_schema(model)
-        online_dict = {col[0]: col[1] for col in online_schema}
-        
-        differences = {
-            'missing_columns': [],
-            'extra_columns': [],
-            'type_mismatches': []
-        }
-        
-        # Check for missing columns in online table
-        for col_name in model_schema:
-            if col_name not in online_dict:
-                differences['missing_columns'].append(col_name)
-                
-        # Check for extra columns in online table
-        for col_name in online_dict:
-            if col_name not in model_schema:
-                differences['extra_columns'].append(col_name)
-                
-        # Check for type mismatches (basic comparison)
-        for col_name in model_schema:
-            if col_name in online_dict:
-                model_type = str(model_schema[col_name]['type']).upper()
-                online_type = online_dict[col_name].upper()
-                # This comparison is probably too basic and will be buggy - needs to be improved
-                if not self._types_compatible(model_type, online_type):
-                    differences['type_mismatches'].append({
-                        'column': col_name,
-                        'model_type': model_type,
-                        'online_type': online_type
-                    })
-                    
-        return differences
+        local_schema = MetaData()
+        diff = compare_metadata(online_schema, local_schema)
+        return diff
     
-    def _types_compatible(self, model_type: str, online_type: str) -> bool:
+    def get_local_metadata(self) -> MetaData:
         """
-        Check if two SQL types are compatible (simplified version).
+        Get metadata for the tables specified in self.tables
         """
-        # Normalize types for comparison
-        type_mappings = {
-            'INTEGER': ['INTEGER', 'INT', 'SERIAL'],
-            'VARCHAR': ['VARCHAR', 'CHARACTER VARYING', 'TEXT'],
-            'BOOLEAN': ['BOOLEAN', 'BOOL'],
-            'TIMESTAMP': ['TIMESTAMP', 'TIMESTAMP WITHOUT TIME ZONE'],
-            'TEXT': ['TEXT', 'VARCHAR', 'CHARACTER VARYING']
-        }
+        metadata = MetaData()
+        for table in self.tables:
+            # Add each table's metadata to our metadata object
+            table.__table__.to_metadata(metadata)
+        return metadata
+
+    def produce_migrations(self) -> List[str]:
+        """
+        Generate migration scripts based on the differences between the local model and the online schema.
+        """
+        local_schema = self.get_local_metadata() 
+        online_schema = self.get_online_db_schema()
+        migrations = compare_metadata(online_schema, local_schema)
         
-        for base_type, variants in type_mappings.items():
-            if any(variant in model_type for variant in variants) and \
-               any(variant in online_type for variant in variants):
-                return True
-        
-        return model_type in online_type or online_type in model_type
-    
+        return migrations
+
     def sync_local_to_online(self):
         """
         Synchronize local SQLModel definitions with online database tables.
         """
-        online_tables = self.list_online_tables()
-        
-        for table in self.tables:
-            table_name = table.__tablename__
-            
-            if table_name not in online_tables:
-                print(f"Creating table: {table_name}")
-                self.create_table_from_model(table)
-            else:
-                online_schema = self.get_online_table_schema(table_name)
-                differences = self.compare_schemas(table, online_schema)
-                
-                if any(differences.values()):
-                    print(f"Differences found in table {table_name}:")
-                    if differences['missing_columns']:
-                        print(f"  Missing columns: {differences['missing_columns']}")
-                    if differences['extra_columns']:
-                        print(f"  Extra columns: {differences['extra_columns']}")
-                    if differences['type_mismatches']:
-                        print(f"  Type mismatches: {differences['type_mismatches']}")
-                    
-                    # TODO: Implement table alteration logic here
-                else:
-                    print(f"Table {table_name} is up to date")
-
-    def create_all_tables(self):
-        """
-        Create all tables defined in the models.
-        """
-        SQLModel.metadata.create_all(self.engine)
 
 if __name__ == "__main__":
     import os
@@ -185,11 +92,5 @@ if __name__ == "__main__":
         [users, posts]
     )
     
-    online_tables = db.list_online_tables()
-    print(f"Online tables: {online_tables}")
+    print(db.produce_migrations())
     
-    if online_tables:
-        print(f"Schema for {online_tables[0]}:")
-        print(db.get_online_table_schema(online_tables[0]))
-    
-    db.sync_local_to_online()
