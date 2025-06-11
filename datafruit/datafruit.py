@@ -4,7 +4,7 @@ from alembic.autogenerate import compare_metadata
 from typing import Optional
 from datetime import datetime
 from sqlmodel import SQLModel
-from diff import print_diffs, Diff
+from datafruit.diff import print_diffs, Diff
 
 """
 ---- OPEN ISSUES ----

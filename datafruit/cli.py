@@ -7,7 +7,7 @@ from sqlmodel import Field, SQLModel
 from rich.console import Console
 from rich.prompt import Prompt
 
-from diff import print_diffs
+from datafruit.diff import print_diffs
 
 DEFAULT_FILE = """import datafruit as dft
 from sqlmodel import SQLModel
@@ -93,8 +93,7 @@ def init():
 @app.command()
 def plan():
     """Plan a datafruit project."""
-
-    print_diffs()
+    # print_diffs()
 
 @app.command()
 def apply():
