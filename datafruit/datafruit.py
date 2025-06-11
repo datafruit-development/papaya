@@ -267,6 +267,13 @@ class postgres_db:
             table.__table__.to_metadata(metadata)
         return metadata
 
+    def compare_local_to_online_schema(self) -> Dict[str, Any]:
+        local_schema = self.get_local_metadata() 
+        online_schema = self.get_online_db_schema()
+        migrations = compare_metadata(online_schema, local_schema)
+
+        return migrations
+
     def produce_migrations(self) -> List[str]:
         """
         Generate migration scripts based on the differences between the local model and the online schema.
