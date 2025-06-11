@@ -157,3 +157,28 @@ def plan():
 def apply():
     """Apply a datafruit project."""
     console.print("[bold green]Applying a datafruit project...[/bold green]")
+
+    schema_file = Path("dft.py")
+    if not schema_file.exists():
+        console.print("[red]No dft.py schema file found.[/red]")
+        raise typer.Exit(1)
+
+    # Load and execute the schema to get the exported databases
+    exported_databases = load_schema_from_file(schema_file)
+    console.print(f"Found {len(exported_databases)} exported database(s)")
+
+    if not exported_databases:
+        console.print("[red]No database exported. Did you forget to call dft.export()?[/red]")
+        raise typer.Exit(1)
+
+    for db in exported_databases:
+        diffs = db.compare_local_to_online_schema()
+        if diffs:
+            sync_result = db.sync_local_to_online()
+            if sync_result:
+                console.print(f"[bold green]✓ Successfully applied changes to {db.connection_string}[/bold green]")
+            else:
+                console.print(f"[red]✗ Failed to apply changes to {db.connection_string}[/red]")
+        else:
+            console.print(f"[bold yellow]No changes needed for {db.connection_string}[/bold yellow]")
+ 
