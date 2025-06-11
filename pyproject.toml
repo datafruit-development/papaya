@@ -25,3 +25,6 @@ test = [
 
 [project.scripts]
 dft = "datafruit.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["datafruit"]
