@@ -1,40 +1,22 @@
-<<<<<<< HEAD
-from sqlalchemy import MetaData, create_engine, Engine
-from alembic.migration import MigrationContext
-from alembic.autogenerate import compare_metadata
-from typing import Optional
-=======
 import sqlalchemy
-from sqlalchemy import inspect, MetaData, create_engine, Engine
+from sqlalchemy import MetaData, create_engine, Engine
 from alembic.migration import MigrationContext
 from alembic.autogenerate import compare_metadata, produce_migrations, render_python_code
 from alembic.operations import Operations
 from alembic.operations.ops import MigrationScript
-from typing import Optional, List, Dict, Any
->>>>>>> 3498c7754091298c5a2d69bc3602c31bb0c5f081
+from typing import Optional
 from datetime import datetime
 from sqlmodel import SQLModel
-from datafruit.diff import print_diffs, Diff
 
-<<<<<<< HEAD
-"""
----- OPEN ISSUES ----
 
-1. Type compatibility checks are too basic and may lead to false positives/negatives.
-2. Altering existing tables to match the model schema is not implemented in sync_local_to_online.
-3. Does not handle foreign key relations - need to implement a way to create, check, and sync foreign keys.
-"""
 
-=======
-
->>>>>>> 3498c7754091298c5a2d69bc3602c31bb0c5f081
 class postgres_db:
     def __init__(self, connection_string: str, tables: list[type[SQLModel]]):
         self.connection_string = connection_string
         self.tables = tables
         self.engine = create_engine(self.connection_string)
 
-    def connect(self) -> Engine:
+    def get_engine(self) -> Engine:
         """
         returns a SQLAlchemy engine connected to the database.
         """
@@ -42,20 +24,10 @@ class postgres_db:
 
     def get_online_db_schema(self) -> MigrationContext:
         """
-        Returns the online database schema as a MigrationContext object.
+        returns the online database schema as a MigrationContext object.
         """
-        conn = self.engine.connect()
-        mc = MigrationContext.configure(
-            connection=conn,
-            opts={
-                "compare_type": True,
-                "compare_server_default": True,
-                "compare_comment": True,
-                "target_metadata": self.get_local_metadata()
-            }
-        )
+        mc = MigrationContext.configure(self.engine.connect())
         return mc
-
 
     def create_table_from_model(self, model: type[SQLModel]):
         """
@@ -109,85 +81,31 @@ class postgres_db:
         #exec(downgrade_ops_code, {'op': op, 'conn': conn})
 
 if __name__ == "__main__":
-    from sqlmodel import SQLModel, Field, Relationship
     import os
+    from sqlmodel import Field
     from dotenv import load_dotenv
-
     load_dotenv()
 
-    class Habitat(SQLModel, table=True):
+    class users(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
-        location: str
-        climate: str
-
-    class Animal(SQLModel, table=True):
-        id: int | None = Field(default=None, primary_key=True)
-        name: str
-        type: str
-        breed: str | None = None
-        is_domestic: bool = False
-        date: int
-
-        # New foreign keys
-        habitat_id: int = Field(foreign_key="habitat.id")
-        caretaker_id: int = Field(foreign_key="user.id")
-
-
-    # ✅ New table — tests add_table, add_index, add_fk, modify_nullable, modify_default
-    class User(SQLModel, table=True):
-        id: Optional[int] = Field(default=None, primary_key=True)
-        username: str = Field(index=True, unique=True, description="The user's unique username")
-        email: str = Field(index=True)
-        bio: Optional[str] = Field(default=None, description="Short bio")
+        username: str = Field(unique=True)
+        email: str = Field(unique=True)
+        full_name: Optional[str] = None
         is_active: bool = Field(default=True)
         created_at: datetime = Field(default_factory=datetime.utcnow)
 
-        posts: list["Post"] = Relationship(back_populates="author")
-
-    # ✅ New table — tests FK, index
-    class Post(SQLModel, table=True):
+    class posts(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
         title: str = Field(index=True)
         content: str
         published: bool = Field(default=False)
-        views: int = Field(default=0)
-        author_id: int = Field(foreign_key="user.id")
-
-        author: Optional[User] = Relationship(back_populates="posts")
-
-    # ✅ New table — tests multiple foreign keys, composite constraints
-    class Comment(SQLModel, table=True):
-        id: Optional[int] = Field(default=None, primary_key=True)
-        post_id: int = Field(foreign_key="post.id")
-        author_id: int = Field(foreign_key="user.id")
-        content: str
         created_at: datetime = Field(default_factory=datetime.utcnow)
+        updated_at: Optional[datetime] = None
 
-        __table_args__ = (
-            {"sqlite_autoincrement": True},  # table-level arg for constraint test
-        )
-
-    # ✅ Table to test deletion (remove_table) — must exist in DB but be removed from schema
-    # To simulate removal, you'd comment this out later
-    class Deprecated(SQLModel, table=True):
-        id: Optional[int] = Field(default=None, primary_key=True)
-        notes: str
-
+    # Note: Connection string format for SQLAlchemy/SQLModel
     db = postgres_db(
-        os.getenv("PG_DB_URL") or "",
-        [Animal, User, Post, Comment, Deprecated, Habitat ]
+        os.getenv("PG_DB_URL"),
+        [users, posts]
     )
-<<<<<<< HEAD
-
-    print_diffs(db.schema_diff())
-
-def export(databases: list[postgres_db]):
-
-    for db in databases:
-        ...
-        print(__name__)
-=======
 
     print(db.sync_local_to_online())
-
->>>>>>> 3498c7754091298c5a2d69bc3602c31bb0c5f081
