@@ -104,7 +104,7 @@ def plan():
 
     console.print("[bold yellow]\nDatafruit will perform the following actions:\n")
 
-    console.print(f"[yellow]~[/yellow] Table: [blue]{AnimalV1.__tablename__}[/blue]")
+    console.print("[yellow]~[/yellow] Table: [blue]tablename[/blue]")
     for diff in schema_diff:
         added = diff.get("added", {})
         removed = diff.get("removed", {})
