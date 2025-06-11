@@ -1,4 +1,10 @@
 name: ruff-action
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
 uses: astral-sh/ruff-action@v3.4.0
 with:
   src: "./datafruit"
