@@ -1,6 +1,6 @@
 from sqlalchemy import inspect, MetaData, create_engine, Engine 
 from alembic.migration import MigrationContext 
-from alembic.autogenerate import compare_metadata
+from alembic.autogenerate import compare_metadata, produce_migrations
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from sqlmodel import SQLModel
@@ -46,8 +46,8 @@ class postgres_db:
         """
         local_schema = self.get_local_metadata() 
         online_schema = self.get_online_db_schema()
-        migrations = compare_metadata(online_schema, local_schema)
-        
+        migrations = produce_migrations(online_schema, local_schema)
+
         return migrations
 
     def sync_local_to_online(self):
