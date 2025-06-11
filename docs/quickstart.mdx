@@ -1,0 +1,60 @@
+---
+title: "developer quick start"
+description: "Follow these steps to define your first data models, inspect schema changes, and apply migrations with Datafruit.
+"
+---
+### 1. Install Datafruit
+
+```bash
+pip install datafruit
+```
+
+### 2. Define Your Data Models
+
+In your Python code, import Datafruit and SQLModel. Declare models as classes:
+
+```python
+import datafruit as dft
+from sqlmodel import SQLModel, Field
+
+class User(SQLModel, table=True):
+    id: int = Field(primary_key=True)
+    name: str
+    email: str = Field(unique=True)
+    active: bool = True
+
+class Post(SQLModel, table=True):
+    id: int = Field(primary_key=True)
+    title: str
+    body: str
+    published: bool = False
+
+# Create a database instance
+url = os.getenv("POSTGRES_URL")
+db = dft.postgres_db(url, [User, Post])
+```
+
+### 3. Inspect Schema Changes
+
+Use the `plan` command to see pending migrations:
+
+```bash
+dft plan
+```
+
+This prints a diff of tables/columns to be added, removed, or modified.
+
+### 4. Apply Migrations
+
+When you’re ready, apply changes to your database:
+
+```bash
+dft apply
+```
+
+Under the hood, Datafruit generates and runs Alembic migration scripts for you.
+
+
+---
+
+You now have a working Datafruit setup: define models in code, preview changes, and apply migrations seamlessly. For more details, see the full documentation.

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "linden",
+  "name": "datafruit",
+  "colors": {
+    "primary": "#E94F57",
+    "light": "#FDB5B5",
+    "dark": "#B22B3A"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["index", "quickstart"]
+          },
+          {
+            "group": "Essentials",
+            "pages": [
+              "essentials/markdown",
+              "essentials/code",
+              "essentials/images",
+              "essentials/settings",
+              "essentials/navigation",
+              "essentials/reusable-snippets"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "Community",
+          "href": "https://discord.gg/datafruit",
+          "icon": "discord"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Support",
+        "href": "mailto:founders@datafruit.dev"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "x": "https://x.com/chendotnet",
+      "github": "https://github.com/datafruit-dev",
+      "linkedin": "https://www.linkedin.com/company/datafruitdev"
+    }
+  }
+}
