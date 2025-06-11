@@ -1,11 +1,22 @@
+<<<<<<< HEAD
 from sqlalchemy import MetaData, create_engine, Engine
 from alembic.migration import MigrationContext
 from alembic.autogenerate import compare_metadata
 from typing import Optional
+=======
+import sqlalchemy
+from sqlalchemy import inspect, MetaData, create_engine, Engine
+from alembic.migration import MigrationContext
+from alembic.autogenerate import compare_metadata, produce_migrations, render_python_code
+from alembic.operations import Operations
+from alembic.operations.ops import MigrationScript
+from typing import Optional, List, Dict, Any
+>>>>>>> 3498c7754091298c5a2d69bc3602c31bb0c5f081
 from datetime import datetime
 from sqlmodel import SQLModel
 from datafruit.diff import print_diffs, Diff
 
+<<<<<<< HEAD
 """
 ---- OPEN ISSUES ----
 
@@ -14,6 +25,9 @@ from datafruit.diff import print_diffs, Diff
 3. Does not handle foreign key relations - need to implement a way to create, check, and sync foreign keys.
 """
 
+=======
+
+>>>>>>> 3498c7754091298c5a2d69bc3602c31bb0c5f081
 class postgres_db:
     def __init__(self, connection_string: str, tables: list[type[SQLModel]]):
         self.connection_string = connection_string
@@ -59,13 +73,20 @@ class postgres_db:
             table.__table__.to_metadata(metadata)
         return metadata
 
-    def schema_diff(self) -> list[Diff]:
+    def compare_local_to_online_schema(self):
+        local_schema = self.get_local_metadata()
+        online_schema = self.get_online_db_schema()
+        migrations = compare_metadata(online_schema, local_schema)
+
+        return migrations
+
+    def produce_migrations(self) -> MigrationScript:
         """
         Generate migration scripts based on the differences between the local model and the online schema.
         """
         local_schema = self.get_local_metadata()
         online_schema = self.get_online_db_schema()
-        migrations = compare_metadata(online_schema, local_schema)
+        migrations = produce_migrations(online_schema, local_schema)
 
         return migrations
 
@@ -73,6 +94,19 @@ class postgres_db:
         """
         Synchronize local SQLModel definitions with online database tables.
         """
+
+        migrations = self.produce_migrations()
+        conn = self.engine.connect()
+        ctx = MigrationContext.configure(conn)
+        upgrade_ops_code = "import sqlmodel\nif True:\n" + render_python_code(migrations.upgrade_ops, migration_context=ctx)
+        #downgrade_ops_code = "import sqlmodel\nif True:\n" + render_python_code(migrations.downgrade_ops, migration_context=ctx)
+        op = Operations(ctx)
+
+        print(upgrade_ops_code)
+
+        #print(downgrade_ops_code)
+        exec(upgrade_ops_code, {'op': op, 'conn': conn, 'sa': sqlalchemy})
+        #exec(downgrade_ops_code, {'op': op, 'conn': conn})
 
 if __name__ == "__main__":
     from sqlmodel import SQLModel, Field, Relationship
@@ -143,6 +177,7 @@ if __name__ == "__main__":
         os.getenv("PG_DB_URL") or "",
         [Animal, User, Post, Comment, Deprecated, Habitat ]
     )
+<<<<<<< HEAD
 
     print_diffs(db.schema_diff())
 
@@ -151,3 +186,8 @@ def export(databases: list[postgres_db]):
     for db in databases:
         ...
         print(__name__)
+=======
+
+    print(db.sync_local_to_online())
+
+>>>>>>> 3498c7754091298c5a2d69bc3602c31bb0c5f081
