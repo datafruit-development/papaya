@@ -16,6 +16,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Create venv 
+        run: uv venv 
+
       - name: Install the project
         run: uv pip install -e ".[test]"
 
