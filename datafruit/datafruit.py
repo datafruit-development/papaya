@@ -18,7 +18,7 @@ class postgres_db:
         self.tables = tables
         self.engine = create_engine(self.connection_string)
         
-    def connect(self) -> Engine:
+    def get_engine(self) -> Engine:
         """
         returns a SQLAlchemy engine connected to the database. 
         """

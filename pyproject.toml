@@ -7,15 +7,21 @@ requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.16.1",
     "psycopg2-binary>=2.9.10",
+    "pydantic>=2.11.5",
     "python-dotenv>=1.1.0",
+    "rich>=14.0.0",
     "sqlalchemy>=2.0.41",
     "sqlmodel>=0.0.24",
+    "typer>=0.16.0",
 ]
 
 [project.optional-dependencies]
 test = [
     "pytest",
     "pytest-postgresql>=7.0.2",
-    "psycopg[binary]",  # psycopg3 with binary package
+    "psycopg[binary]",          # psycopg3 with binary package
     "pytest>=8.4.0",
 ]
+
+[project.scripts]
+dft = "datafruit.cli:app"
