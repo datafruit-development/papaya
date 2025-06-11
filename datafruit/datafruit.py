@@ -1,12 +1,10 @@
-from sqlalchemy import inspect, MetaData, create_engine, Engine
+from sqlalchemy import MetaData, create_engine, Engine
 from alembic.migration import MigrationContext
 from alembic.autogenerate import compare_metadata
-from typing import Optional, List, Dict, Any
+from typing import Optional
 from datetime import datetime
 from sqlmodel import SQLModel
-from dataclasses import dataclass
-from enum import Enum
-
+from diff import print_diffs, Diff
 
 """
 ---- OPEN ISSUES ----
@@ -61,7 +59,7 @@ class postgres_db:
             table.__table__.to_metadata(metadata)
         return metadata
 
-    def schema_diff(self) -> List[str]:
+    def schema_diff(self) -> list[Diff]:
         """
         Generate migration scripts based on the differences between the local model and the online schema.
         """
@@ -78,8 +76,6 @@ class postgres_db:
 
 if __name__ == "__main__":
     from sqlmodel import SQLModel, Field, Relationship
-    from typing import Optional, List
-    from datetime import datetime
     import os
     from dotenv import load_dotenv
 
@@ -112,7 +108,7 @@ if __name__ == "__main__":
         is_active: bool = Field(default=True)
         created_at: datetime = Field(default_factory=datetime.utcnow)
 
-        posts: List["Post"] = Relationship(back_populates="author")
+        posts: list["Post"] = Relationship(back_populates="author")
 
     # ✅ New table — tests FK, index
     class Post(SQLModel, table=True):
@@ -144,10 +140,14 @@ if __name__ == "__main__":
         notes: str
 
     db = postgres_db(
-        os.getenv("PG_DB_URL"),
-        [Animal, User, Post, Comment, Deprecated, Habitat ]  # full schema list here
+        os.getenv("PG_DB_URL") or "",
+        [Animal, User, Post, Comment, Deprecated, Habitat ]
     )
 
-    from diff_printing import print_alembic_diffs
-    diff = db.schema_diff()
-    print_alembic_diffs(diff)
+    print_diffs(db.schema_diff())
+
+def export(databases: list[postgres_db]):
+
+    for db in databases:
+        ...
+        print(__name__)
