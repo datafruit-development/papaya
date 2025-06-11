@@ -1,4 +1,9 @@
-name: Example
+name: Tests 
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   uv-example:

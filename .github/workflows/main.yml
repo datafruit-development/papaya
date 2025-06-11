@@ -1,5 +1,5 @@
-- name: ruff-action
-  uses: astral-sh/ruff-action@v3.4.0
-  with:
-    src: "./datafruit"
+name: ruff-action
+uses: astral-sh/ruff-action@v3.4.0
+with:
+  src: "./datafruit"
     
