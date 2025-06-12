@@ -1,6 +1,6 @@
 import pytest
 import pytest_postgresql
-from datafruit.datafruit import postgres_db
+from datafruit.datafruit import PostgresDB
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Engine, MetaData
 from typing import Optional
@@ -38,7 +38,7 @@ def postgresql_db_conn_str(postgresql):
 
 @pytest.fixture
 def db_instance(postgresql_db_conn_str):
-    return postgres_db(postgresql_db_conn_str, [TestUser, TestPost, TestProfile])
+    return PostgresDB(postgresql_db_conn_str, [TestUser, TestPost, TestProfile])
 
 @pytest.fixture
 def db_with_tables(db_instance):
@@ -49,10 +49,10 @@ def db_with_tables(db_instance):
 @pytest.fixture
 def empty_db_instance(postgresql_db_conn_str):
     """Create a database instance without any tables"""
-    return postgres_db(postgresql_db_conn_str, [])
+    return PostgresDB(postgresql_db_conn_str, [])
 
 def test_init_creates_engine(postgresql_db_conn_str):
-    db = postgres_db(postgresql_db_conn_str, [TestUser])
+    db = PostgresDB(postgresql_db_conn_str, [TestUser])
     assert db.connection_string == postgresql_db_conn_str
     assert db.tables == [TestUser]
     assert db.engine is not None

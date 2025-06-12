@@ -147,7 +147,7 @@ def print_diff_item(diff: Tuple[Any, ...], index_map: dict, claimed_indexes: set
 
 def print_diffs(diffs: List[Diff]) -> None:
     if not diffs:
-        console.print("\n[grey53]no schema changes detected[/grey53]\n")
+        console.print("[grey53]no schema changes detected[/grey53]")
         return
 
     console.print("[bold yellow]\nDatafruit will perform the following actions:")

@@ -1,17 +1,12 @@
 import sys
 from pathlib import Path
-
 import typer
 import re
 import importlib.util
-
 from rich.console import Console
 from rich.prompt import Prompt
-
 from datafruit import EXPORTED_DATABASES
 from datafruit.diff import print_diffs
-
-
 
 DEFAULT_FILE = """import datafruit as dft
 import os
@@ -19,9 +14,10 @@ from sqlmodel import Field, SQLModel
 from dotenv import load_dotenv
 from typing import Optional
 from datetime import datetime
+
 load_dotenv()
 
-class users(SQLModel, table=True):
+class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(unique=True)
     email: str = Field(unique=True)
@@ -29,7 +25,7 @@ class users(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class posts(SQLModel, table=True):
+class Post(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(index=True)
     content: str
@@ -37,20 +33,19 @@ class posts(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = None
 
-db = dft.postgres_db(
+db = dft.PostgresDB(
     os.getenv("PG_DB_URL") or "",
-    [users, posts]
+    [User, Post]
 )
 
 dft.export([db])"""
 
 Prompt.prompt_suffix = " › "
-
 console = Console()
 app = typer.Typer()
 
 def load_schema_from_file(path: Path):
-    """Dynamically load the schema file (e.g., main.py) and return exported databases."""
+    """Dynamically load the schema file (e.g., dft.py) and return exported databases."""
     module_name = "datafruit_schema"
     spec = importlib.util.spec_from_file_location(module_name, path)
     module = importlib.util.module_from_spec(spec)
@@ -62,18 +57,17 @@ def load_schema_from_file(path: Path):
     if hasattr(module, 'dft') and hasattr(module.dft, 'EXPORTED_DATABASES'):
         return module.dft.EXPORTED_DATABASES
 
-    # Fallback: try to find databases by looking for postgres_db instances
+    # Fallback: try to find databases by looking for PostgresDB instances
     databases = []
     for attr_name in dir(module):
         attr = getattr(module, attr_name)
-        if hasattr(attr, '__class__') and attr.__class__.__name__ == 'postgres_db':
+        if hasattr(attr, '__class__') and attr.__class__.__name__ == 'PostgresDB':
             databases.append(attr)
 
     return databases
 
 def datafruit_default_init(directory: str) -> bool:
     """Initialize a datafruit project in the given directory."""
-
     dir_path = Path(directory)
     dir_path.mkdir(parents=True, exist_ok=True)
     file_path = dir_path / "dft.py"
@@ -84,7 +78,6 @@ def datafruit_default_init(directory: str) -> bool:
     except Exception as e:
         console.print(f"[red]Error creating file: {e}[/red]")
         return False
-
 
 def project_exists(directory: Path) -> bool:
     # TODO: this is implemented as a heuristic for now
@@ -103,24 +96,23 @@ def get_project_name() -> str:
 
         console.print("[red]Invalid project name. Use only letters, numbers, underscores, and dashes.[/red]")
 
-
 @app.command()
 def init(name = None):
     """Initialize a new datafruit project."""
-
     target_dir = Path.cwd()
+
     if project_exists(target_dir):
         console.print("[bold yellow]Existing project found in current directory. Not initializing.[/bold yellow]")
         raise typer.Exit(1)
 
     console.print("[bold yellow]No project found in current directory. Creating a new project.[/bold yellow]")
+
     if name:
         project_name = name
     else:
         project_name = get_project_name()
 
     target_dir = target_dir / project_name
-
     success = datafruit_default_init(str(target_dir))
 
     if success:
@@ -129,11 +121,10 @@ def init(name = None):
         console.print("[red]✗ Failed to initialize datafruit project[/red]")
         raise typer.Exit(1)
 
-
 @app.command()
 def plan():
-    """Plan a datafruit project."""
-    console.print("[bold blue]Planning schema changes...[/bold blue]")
+    """Plan schema changes for a datafruit project."""
+    console.print("\n[bold blue]Planning schema changes...[/bold blue]")
 
     schema_file = Path("dft.py")
     if not schema_file.exists():
@@ -149,14 +140,13 @@ def plan():
         raise typer.Exit(1)
 
     for db in exported_databases:
-        diffs = db.compare_local_to_online_schema()
+        diffs = db.get_schema_diff()
         print_diffs(diffs)
-
 
 @app.command()
 def apply():
-    """Apply a datafruit project."""
-    console.print("[bold green]Applying a datafruit project...[/bold green]")
+    """Apply schema changes for a datafruit project."""
+    console.print("\n[bold green]Applying schema changes...[/bold green]")
 
     schema_file = Path("dft.py")
     if not schema_file.exists():
@@ -172,13 +162,13 @@ def apply():
         raise typer.Exit(1)
 
     for db in exported_databases:
-        diffs = db.compare_local_to_online_schema()
+        diffs = db.get_schema_diff()
+        print_diffs(diffs)
         if diffs:
-            sync_result = db.sync_local_to_online()
-            if sync_result:
-                console.print(f"[bold green]✓ Successfully applied changes to {db.connection_string}[/bold green]")
+            success = db.sync_schema()
+            if success:
+                console.print(f"[bold green]✓ Successfully applied changes to[/bold green] [medium_purple]{db.connection_string}[/medium_purple]")
             else:
                 console.print(f"[red]✗ Failed to apply changes to {db.connection_string}[/red]")
         else:
             console.print(f"[bold yellow]No changes needed for {db.connection_string}[/bold yellow]")
- 

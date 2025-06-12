@@ -1,84 +1,136 @@
 import sqlalchemy
-from sqlalchemy import MetaData, create_engine, Engine
+import sqlmodel
+from sqlalchemy import MetaData, create_engine, Engine, text
 from alembic.migration import MigrationContext
-from alembic.autogenerate import compare_metadata, produce_migrations, render_python_code
+from alembic.autogenerate import produce_migrations, render_python_code, compare_metadata
 from alembic.operations import Operations
-from alembic.operations.ops import MigrationScript
 from typing import Optional
 from datetime import datetime
 from sqlmodel import SQLModel
 
 
-
-class postgres_db:
+class PostgresDB:
     def __init__(self, connection_string: str, tables: list[type[SQLModel]]):
         self.connection_string = connection_string
         self.tables = tables
-        self.engine = create_engine(self.connection_string)
+        self.engine = self._create_engine()
 
-    def get_engine(self) -> Engine:
-        """
-        returns a SQLAlchemy engine connected to the database.
-        """
-        return create_engine(self.connection_string)
+    def _create_engine(self) -> Engine:
+        try:
+            return create_engine(self.connection_string)
+        except sqlalchemy.exc.ArgumentError as e:
+            raise ValueError(f"Invalid database connection string: {e}") from e
 
-    def get_online_db_schema(self) -> MigrationContext:
-        """
-        returns the online database schema as a MigrationContext object.
-        """
-        mc = MigrationContext.configure(self.engine.connect())
-        return mc
+    def _connect(self):
+        try:
+            return self.engine.connect()
+        except sqlalchemy.exc.OperationalError as e:
+            raise ConnectionError(f"Could not connect to database: {e}") from e
 
-    def create_table_from_model(self, model: type[SQLModel]):
-        """
-        Create a table from a SQLModel class.
-        """
-        model.metadata.create_all(self.engine, tables=[model.__table__])
+    def validate_connection(self) -> bool:
+        try:
+            with self._connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return True
+        except Exception:
+            return False
 
-    def get_local_metadata(self) -> MetaData:
-        """
-        Get metadata for the tables specified in self.tables
-        """
+    def _get_local_metadata(self) -> MetaData:
         metadata = MetaData()
         for table in self.tables:
-            # Add each table's metadata to our metadata object
             table.__table__.to_metadata(metadata)
         return metadata
 
-    def compare_local_to_online_schema(self):
-        local_schema = self.get_local_metadata()
-        online_schema = self.get_online_db_schema()
-        migrations = compare_metadata(online_schema, local_schema)
+    def _produce_migrations(self):
+        local_metadata = self._get_local_metadata()
+        with self._connect() as conn:
+            context = MigrationContext.configure(conn)
+            return produce_migrations(context, local_metadata)
 
-        return migrations
+    def get_schema_diff(self):
+        """Get schema differences between local models and database."""
+        local_metadata = self._get_local_metadata()
+        with self._connect() as conn:
+            context = MigrationContext.configure(conn)
+            return compare_metadata(context, local_metadata)
 
-    def produce_migrations(self) -> MigrationScript:
-        """
-        Generate migration scripts based on the differences between the local model and the online schema.
-        """
-        local_schema = self.get_local_metadata()
-        online_schema = self.get_online_db_schema()
-        migrations = produce_migrations(online_schema, local_schema)
+    def sync_schema(self) -> bool:
+        try:
+            if not self.validate_connection():
+                return False
 
-        return migrations
+            migrations = self._produce_migrations()
 
-    def sync_local_to_online(self):
-        """
-        Synchronize local SQLModel definitions with online database tables.
-        """
+            if not migrations.upgrade_ops.ops:
+                return True
 
-        migrations = self.produce_migrations()
-        conn = self.engine.connect()
-        ctx = MigrationContext.configure(conn)
-        upgrade_ops_code = "import sqlmodel\nif True:\n" + render_python_code(migrations.upgrade_ops, migration_context=ctx)
-        #downgrade_ops_code = "import sqlmodel\nif True:\n" + render_python_code(migrations.downgrade_ops, migration_context=ctx)
-        op = Operations(ctx)
+            with self._connect() as conn:
+                with conn.begin():
+                    context = MigrationContext.configure(conn)
+                    migration_code = render_python_code(
+                        migrations.upgrade_ops,
+                        migration_context=context
+                    )
 
-        print(upgrade_ops_code)
+                    clean_lines = []
+                    for line in migration_code.split('\n'):
+                        if line.strip().startswith(('import ', 'if True:')):
+                            continue
+                        clean_line = line.lstrip()
+                        if clean_line:
+                            clean_lines.append(clean_line)
 
-        #print(downgrade_ops_code)
-        exec(upgrade_ops_code, {'op': op, 'conn': conn, 'sa': sqlalchemy})
-        #exec(downgrade_ops_code, {'op': op, 'conn': conn})
+                    final_code = "import sqlalchemy as sa\nimport sqlmodel\n" + '\n'.join(clean_lines)
+
+                    op = Operations(context)
+                    exec_globals = {
+                        'op': op,
+                        'sa': sqlalchemy,
+                        'sqlmodel': sqlmodel,
+                        '__builtins__': __builtins__
+                    }
+
+                    exec(final_code, exec_globals)
+            return True
+
+        except Exception as e:
+            print(f"Migration error: {e}")
+            return False
+
+    def execute_sql(self, sql: str):
+        try:
+            with self._connect() as conn:
+                with conn.begin():
+                    return conn.execute(text(sql))
+        except Exception as e:
+            print(f"SQL execution error: {e}")
+            return None
+
+    def get_table_info(self, table_name: str = None):
+        try:
+            with self._connect() as conn:
+                if table_name:
+                    query = """
+                        SELECT column_name, data_type, is_nullable, column_default
+                        FROM information_schema.columns
+                        WHERE table_name = :table_name
+                        ORDER BY ordinal_position
+                    """
+                    result = conn.execute(text(query), {"table_name": table_name})
+                else:
+                    query = """
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                        ORDER BY table_name
+                    """
+                    result = conn.execute(text(query))
+
+                return result.fetchall()
+        except Exception as e:
+            print(f"Error getting table info: {e}")
+            return []
+
 
 if __name__ == "__main__":
     import os
@@ -86,7 +138,7 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
 
-    class users(SQLModel, table=True):
+    class User(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
         username: str = Field(unique=True)
         email: str = Field(unique=True)
@@ -94,7 +146,7 @@ if __name__ == "__main__":
         is_active: bool = Field(default=True)
         created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class posts(SQLModel, table=True):
+    class Post(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
         title: str = Field(index=True)
         content: str
@@ -102,10 +154,8 @@ if __name__ == "__main__":
         created_at: datetime = Field(default_factory=datetime.utcnow)
         updated_at: Optional[datetime] = None
 
-    # Note: Connection string format for SQLAlchemy/SQLModel
-    db = postgres_db(
-        os.getenv("PG_DB_URL"),
-        [users, posts]
-    )
+    db = PostgresDB(os.getenv("PG_DB_URL"), [User, Post])
 
-    print(db.sync_local_to_online())
+    print("Testing sync...")
+    result = db.sync_schema()
+    print(f"Sync result: {result}")

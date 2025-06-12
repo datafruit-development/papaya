@@ -15,23 +15,35 @@ In your Python code, import Datafruit and SQLModel. Declare models as classes:
 
 ```python
 import datafruit as dft
-from sqlmodel import SQLModel, Field
+import os
+from sqlmodel import Field, SQLModel
+from dotenv import load_dotenv
+from typing import Optional
+from datetime import datetime
+load_dotenv()
 
-class User(SQLModel, table=True):
-    id: int = Field(primary_key=True)
-    name: str
+class users(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(unique=True)
     email: str = Field(unique=True)
-    active: bool = True
+    full_name: Optional[str] = None
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class Post(SQLModel, table=True):
-    id: int = Field(primary_key=True)
-    title: str
-    body: str
-    published: bool = False
+class posts(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str = Field(index=True)
+    content: str
+    published: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = None
 
-# Create a database instance
-url = os.getenv("POSTGRES_URL")
-db = dft.postgres_db(url, [User, Post])
+db = dft.PostgresDB(
+    os.getenv("PG_DB_URL") or "",
+    [users, posts]
+)
+
+dft.export([db])
 ```
 
 ### 3. Inspect Schema Changes
