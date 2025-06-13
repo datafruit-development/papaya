@@ -30,3 +30,16 @@ dft = "datafruit.cli:app"
 
 [tool.setuptools.packages.find]
 include = ["datafruit"]
+
+[tool.pytest.ini_options]
+markers = [
+    "config: Tests for configuration parsing and validation",
+    "diffing: Tests for state diffing (desired vs actual)",
+    "planning: Tests for plan generation and management", 
+    "apply: Tests for apply/sync operations",
+    "cli: Tests for CLI interface",
+    "connection: Tests for database connection validation",
+    "unit: Fast unit tests",
+    "integration: Database integration tests", 
+    "slow: Slow running tests"
+]

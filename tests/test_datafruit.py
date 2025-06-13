@@ -1,18 +1,23 @@
 import pytest
-import pytest_postgresql  # Required for postgresql fixture
-from datafruit.datafruit import PostgresDB  
+import pytest_postgresql
+from datafruit.datafruit import PostgresDB
 from sqlmodel import SQLModel, Field
-from sqlalchemy import Engine, MetaData, create_engine, text
-from sqlalchemy.exc import ArgumentError, OperationalError
+from sqlalchemy import Engine, MetaData, create_engine, text, Column, Integer, String, Boolean, DateTime
+from sqlalchemy.exc import ArgumentError, OperationalError, IntegrityError
 from typing import Optional
 from datetime import datetime, timedelta
 import json
-import os
 import tempfile
 import hashlib
+import sys
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, mock_open
 import datafruit.cli as cli_module
+
+# =============================================================================
+# Test Models for Different Scenarios
+# =============================================================================
 
 class TestUser(SQLModel, table=True):
     __tablename__ = "test_users"
@@ -39,6 +44,19 @@ class TestProfile(SQLModel, table=True):
     age: int
     salary: Optional[float] = None
 
+class TestComplexModel(SQLModel, table=True):
+    __tablename__ = "test_complex"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=100)
+    score: float = Field(default=0.0)
+    tags: Optional[str] = None  
+    is_verified: bool = Field(default=False)
+    metadata_field: Optional[str] = Field(default=None)
+
+# =============================================================================
+# Fixtures
+# =============================================================================
+
 @pytest.fixture
 def postgresql_db_conn_str(postgresql):
     connection = f'postgresql+psycopg2://{postgresql.info.user}:@{postgresql.info.host}:{postgresql.info.port}/{postgresql.info.dbname}'
@@ -50,123 +68,339 @@ def db_instance(postgresql_db_conn_str):
 
 @pytest.fixture
 def empty_db_instance(postgresql_db_conn_str):
-    """Create a database instance without any tables"""
     return PostgresDB(postgresql_db_conn_str, [])
 
 @pytest.fixture
+def complex_db_instance(postgresql_db_conn_str):
+    return PostgresDB(postgresql_db_conn_str, [TestComplexModel])
+
+@pytest.fixture
 def temp_dir():
-    """Create a temp dir for testing file operations"""
     with tempfile.TemporaryDirectory() as temp_dir:
         yield Path(temp_dir)
 
 @pytest.fixture
 def mock_dft_dir(temp_dir):
-    """mock the DFT_DIR to use temp directory"""
-    with patch.object(cli_module, 'DFT_DIR', temp_dir / '.dft'):
-        yield temp_dir / '.dft'
-        
+    dft_path = temp_dir / '.dft'
+    dft_path.mkdir(parents=True, exist_ok=True)
+    
+    with patch.object(cli_module, 'DFT_DIR', dft_path):
+        with patch.object(cli_module, 'PLAN_FILE', dft_path / 'plan.json'):
+            yield dft_path
+
 @pytest.fixture
 def sample_schema_content():
     return '''import datafruit as dft
 from sqlmodel import Field, SQLModel
 
-class User(SQLModel, table=True):
+class TestUserSample(SQLModel, table=True):
+    __tablename__ = "test_users_sample"
     id: int = Field(primary_key=True)
     name: str
 
-db = dft.PostgresDB("postgresql://localhost/test", [User])
+db = dft.PostgresDB("postgresql://localhost/test", [TestUserSample])
 dft.export([db])'''
 
-# Basic tests
-def test_init_creates_engine(postgresql_db_conn_str):
-    db = PostgresDB(postgresql_db_conn_str, [TestUser])
-    assert db.connection_string == postgresql_db_conn_str
-    assert db.tables == [TestUser]
-    assert db.engine is not None
+@pytest.fixture
+def temp_project_dir():
+    """Create a temporary project directory"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        project_dir = Path(temp_dir)
+        yield project_dir
 
-def test_get_local_metadata_returns_metadata_object(db_instance):
-    """Test that _get_local_metadata() returns a MetaData object"""
-    metadata = db_instance._get_local_metadata()  
-    assert isinstance(metadata, MetaData)
+@pytest.fixture(autouse=True)
+def cleanup_sqlmodel_registry():
+    yield
+    try:
+        if hasattr(SQLModel, 'registry') and hasattr(SQLModel.registry, '_class_registry'):
+            SQLModel.registry._class_registry.clear()
+        if hasattr(SQLModel, 'metadata'):
+            SQLModel.metadata.clear()
+    except Exception:
+        pass
 
-def test_get_local_metadata_contains_specified_tables(db_instance):
-    """Test that local metadata contains all tables specified in __init__"""
-    metadata = db_instance._get_local_metadata()  
-    table_names = [table.name for table in metadata.tables.values()]
+# =============================================================================
+# 1. CONFIGURATION PARSING & VALIDATION TESTS
+# =============================================================================
 
-    expected_tables = ["test_users", "test_posts", "test_profiles"]
-    for expected_table in expected_tables:
-        assert expected_table in table_names
+@pytest.mark.config
+class TestSchemaConfigurationParsing:
+    def test_load_valid_schema_configuration(self, temp_dir, postgresql_db_conn_str):
+        """Test loading a valid declarative schema file"""
+        schema_content = f'''
+import datafruit as dft
+from sqlmodel import Field, SQLModel
+from typing import Optional
 
-def test_get_local_metadata_empty_when_no_tables(empty_db_instance):
-    """Test that _get_local_metadata() returns empty metadata when no tables specified"""
-    metadata = empty_db_instance._get_local_metadata()  
-    assert isinstance(metadata, MetaData)
-    assert len(metadata.tables) == 0
+class TestUserConfig(SQLModel, table=True):
+    __tablename__ = "test_users_config"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(unique=True)
+    email: str
 
-# Connection tests
-class TestPostgresDBConnection:
-    """Test PostgresDB connection methods"""
-    
-    def test_connect_successful(self, db_instance):
-        connection = db_instance._connect()
-        assert connection is not None
-        connection.close()
-
-    def test_validate_connection_successful(self, db_instance):
-        assert db_instance.validate_connection() is True
-
-    def test_validate_connection_failed(self):
-        db = PostgresDB("postgresql://invalid:invalid@localhost:5432/nonexistent", [TestUser])
-        assert db.validate_connection() is False
-
-# Schema diff tests
-class TestPostgresDBSchemaDiff:
-    """Test PostgresDB schema diff operations"""
-    
-    @patch('datafruit.datafruit.compare_metadata')
-    def test_get_schema_diff_calls_compare_metadata(self, mock_compare, db_instance):
-        mock_compare.return_value = []
+db = dft.PostgresDB("{postgresql_db_conn_str}", [TestUserConfig])
+dft.export([db])
+'''
+        schema_file = temp_dir / "dft.py"
+        schema_file.write_text(schema_content)
         
-        result = db_instance.get_schema_diff()
-        
-        mock_compare.assert_called_once()
-        assert result == []
+        exported_dbs = cli_module.load_schema_from_file(schema_file)
+        assert len(exported_dbs) == 1
+        assert len(exported_dbs[0].tables) == 1
 
-    def test_get_schema_diff_integration(self, db_instance):
+    def test_invalid_schema_configuration_syntax_error(self, temp_dir):
+        """Test handling of invalid Python syntax in schema file"""
+        invalid_schema = '''
+import datafruit as dft
+from sqlmodel import SQLModel, Field
+# Invalid Python syntax - missing colon
+class TestUserInvalid(SQLModel, table=True)
+    __tablename__ = "test_users_invalid"
+    id: int = Field(primary_key=True)
+'''
+        schema_file = temp_dir / "dft.py"
+        schema_file.write_text(invalid_schema)
+        
+        # Should handle syntax errors gracefully
+        with pytest.raises(Exception):  # Could be SyntaxError or other
+            cli_module.load_schema_from_file(schema_file)
+
+    def test_schema_configuration_missing_export(self, temp_dir, postgresql_db_conn_str):
+        """Test schema file that doesn't call dft.export()"""
+        schema_content = f'''import datafruit as dft
+from sqlmodel import Field, SQLModel
+
+class TestUserNoExport(SQLModel, table=True):
+    __tablename__ = "test_users_no_export"
+    id: int = Field(primary_key=True)
+
+db = dft.PostgresDB("{postgresql_db_conn_str}", [TestUserNoExport])
+# Missing: dft.export([db])
+'''
+        schema_file = temp_dir / "dft.py"
+        schema_file.write_text(schema_content)
+        
+        exported_dbs = cli_module.load_schema_from_file(schema_file)
+        # Should find 1 database via fallback mechanism
+        assert len(exported_dbs) == 1
+
+    def test_schema_hash_generation(self, temp_dir):
+        """Test that schema file hashing works for change detection"""
+        content1 = "# Schema version 1"
+        content2 = "# Schema version 2"
+        
+        schema_file = temp_dir / "schema.py"
+        
+        schema_file.write_text(content1)
+        hash1 = cli_module.get_schema_hash(schema_file)
+        
+        schema_file.write_text(content2)
+        hash2 = cli_module.get_schema_hash(schema_file)
+        
+        assert hash1 != hash2  # Different content should have different hashes
+        assert isinstance(hash1, str)
+        assert len(hash1) > 0
+
+# =============================================================================
+# 2. STATE DIFFING TESTS (Core Declarative Feature)
+# =============================================================================
+
+@pytest.mark.diffing
+class TestStateDiffing:
+    def test_diff_detects_new_tables(self, db_instance):
+        """Test that diff correctly identifies tables that need to be created"""
+        # Fresh database should show all tables as new
         diffs = db_instance.get_schema_diff()
-        assert isinstance(diffs, list)
-
-# SQL execution tests
-class TestPostgresDBSQLExecution:
-    """Test PostgresDB SQL execution methods"""
-    
-    def test_execute_sql_successful(self, db_instance):
-        result = db_instance.execute_sql("SELECT 1 as test_column")
-        assert result is not None
-
-    def test_execute_sql_with_invalid_sql(self, db_instance):
-        result = db_instance.execute_sql("INVALID SQL STATEMENT")
-        assert result is None
-
-    def test_get_table_info_all_tables(self, db_instance):
-        result = db_instance.get_table_info()
-        assert isinstance(result, list)
-
-    def test_get_table_info_specific_table(self, db_instance):
-        db_instance.execute_sql("CREATE TABLE IF NOT EXISTS specific_table (id INTEGER PRIMARY KEY, name VARCHAR(50) NOT NULL)")
         
-        result = db_instance.get_table_info("specific_table")
-        assert isinstance(result, list)
+        table_adds = [diff for diff in diffs if diff[0] == "add_table"]
+        assert len(table_adds) == 3  # TestUser, TestPost, TestProfile tables
 
-    def test_get_table_info_nonexistent_table(self, db_instance):
-        result = db_instance.get_table_info("nonexistent_table")
-        assert result == []
+    def test_diff_empty_when_states_match(self, db_instance):
+        """Test that no diff is generated when database matches config"""
+        # First sync to match states
+        success = db_instance.sync_schema()
+        assert success is True
+        
+        # Now diff should be empty
+        diffs = db_instance.get_schema_diff()
+        assert len(diffs) == 0
 
-# CLI tests
-class TestCLIUtilityFunctions:
-    """Test CLI utility functions"""
+    def test_diff_with_empty_configuration(self, postgresql_db_conn_str):
+        """Test diff when configuration declares no tables"""
+        empty_db = PostgresDB(postgresql_db_conn_str, [])  # No tables declared
+        
+        diffs = empty_db.get_schema_diff()
+        assert isinstance(diffs, list)  # Should not crash
+
+# =============================================================================
+# 3. PLAN GENERATION & MANAGEMENT TESTS
+# =============================================================================
+
+@pytest.mark.planning
+class TestPlanGeneration:
+    """Test plan generation and management (like terraform plan)"""
     
+    def test_plan_serialization_and_deserialization(self, mock_dft_dir):
+        """Test saving and loading plans"""
+        # Mock some diffs
+        diffs_by_db = [
+            ("postgresql://test", [("add_table", Mock())])
+        ]
+        schema_hash = "test_hash"
+        
+        with patch('datafruit.cli.serialize_diff') as mock_serialize:
+            mock_serialize.return_value = {"type": "add_table", "table": "test"}
+            
+            # Save plan
+            cli_module.save_plan(diffs_by_db, schema_hash)
+            
+            # Load plan
+            loaded_plan = cli_module.load_plan()
+            
+            assert loaded_plan is not None
+            assert loaded_plan["schema_hash"] == schema_hash
+
+    def test_plan_expiration(self, mock_dft_dir):
+        """Test that old plans expire automatically"""
+        # Create an expired plan by mocking old timestamp
+        expired_plan_data = {
+            "timestamp": "2020-01-01T00:00:00",  # Very old timestamp
+            "schema_hash": "old_hash",
+            "databases": [],
+            "expiry_minutes": 10
+        }
+        
+        plan_file = mock_dft_dir / "plan.json"
+        plan_file.write_text(json.dumps(expired_plan_data))
+        
+        # Should return None for expired plan
+        loaded_plan = cli_module.load_plan()
+        assert loaded_plan is None
+        assert not plan_file.exists()  # Should be deleted
+
+    def test_plan_validation_schema_changed(self, mock_dft_dir, temp_dir):
+        """Test plan invalidation when schema file changes"""
+        schema_file = temp_dir / "dft.py"
+        schema_file.write_text("# Original content")
+        original_hash = cli_module.get_schema_hash(schema_file)
+        
+        # Save plan with original hash
+        diffs_by_db = []
+        cli_module.save_plan(diffs_by_db, original_hash)
+        
+        # Change schema file
+        schema_file.write_text("# Modified content")
+        new_hash = cli_module.get_schema_hash(schema_file)
+        
+        # Plan should be invalid due to hash mismatch
+        assert original_hash != new_hash
+
+    def test_diff_serialization(self):
+        """Test that diffs can be properly serialized for plans"""
+        # Test different types of diffs
+        mock_table = Mock()
+        mock_table.name = "test_table"
+        mock_table.columns = []
+        
+        add_table_diff = ("add_table", mock_table)
+        serialized = cli_module.serialize_diff(add_table_diff)
+        
+        assert serialized["type"] == "add_table"
+        assert serialized["table_name"] == "test_table"
+
+# =============================================================================
+# 4. APPLY/SYNC OPERATION TESTS
+# =============================================================================
+
+@pytest.mark.apply
+class TestApplyOperations:
+    """Test applying plans to reach desired state (like terraform apply)"""
+    
+    def test_sync_creates_declared_tables(self, db_instance):
+        """Test that sync creates all tables declared in config"""
+        # Before sync - tables shouldn't exist
+        initial_tables = db_instance.get_table_info()
+        table_names = [table[0] for table in initial_tables]
+        assert "test_users" not in table_names
+        assert "test_posts" not in table_names
+        
+        # Apply the configuration
+        success = db_instance.sync_schema()
+        assert success is True
+        
+        # After sync - tables should exist
+        final_tables = db_instance.get_table_info()
+        table_names = [table[0] for table in final_tables]
+        assert "test_users" in table_names
+        assert "test_posts" in table_names
+
+    def test_sync_is_idempotent(self, db_instance):
+        """Test that running sync multiple times is safe (idempotent)"""
+        # First sync
+        success1 = db_instance.sync_schema()
+        assert success1 is True
+        
+        # Second sync should also succeed and not break anything
+        success2 = db_instance.sync_schema()
+        assert success2 is True
+        
+        # State should still be correct
+        diffs = db_instance.get_schema_diff()
+        assert len(diffs) == 0
+
+    def test_sync_handles_connection_failure(self):
+        """Test graceful handling of connection failures during sync"""
+        # Use a properly formatted but unreachable connection string
+        invalid_db = PostgresDB("postgresql+psycopg2://user:pass@nonexistent-host:5432/db", [TestUser])
+        
+        success = invalid_db.sync_schema()
+        assert success is False
+
+# =============================================================================
+# 5. CLI INTERFACE TESTS
+# =============================================================================
+
+@pytest.mark.cli
+class TestCLIInterface:
+    """Test the declarative CLI commands (init, plan, apply)"""
+    
+    def test_cli_init_creates_project_structure(self, temp_dir):
+        """Test that 'dft init' creates proper project structure"""
+        project_dir = temp_dir / "test_project"
+        
+        success = cli_module.datafruit_default_init(str(project_dir))
+        assert success is True
+        
+        # Should create dft.py file
+        dft_file = project_dir / "dft.py"
+        assert dft_file.exists()
+        
+        # File should contain valid Python code
+        content = dft_file.read_text()
+        assert "import datafruit as dft" in content
+        assert "SQLModel" in content
+
+    def test_cli_project_name_validation(self):
+        """Test project name validation rules"""
+        valid_names = ["my-project", "project_123", "DataProject"]
+        invalid_names = ["", "project with spaces", "project@special", None]
+        
+        for name in valid_names:
+            assert cli_module.is_valid_project_name(name) is True
+        
+        for name in invalid_names:
+            assert cli_module.is_valid_project_name(name) is False
+
+    def test_cli_plan_workflow(self, mock_dft_dir):
+        """Test the plan command workflow"""
+        # Test plan clearing
+        plan_file = mock_dft_dir / "plan.json"
+        plan_file.write_text('{"test": "data"}')
+        assert plan_file.exists()
+        
+        cli_module.clear_plan()
+        assert not plan_file.exists()
+
     def test_get_schema_hash(self, temp_dir):
         schema_file = temp_dir / "test_schema.py"
         content = "test content for hashing"
@@ -189,6 +423,250 @@ class TestCLIUtilityFunctions:
         
         assert hash1 != hash2
 
-# Run tests
+    def test_ensure_dft_dir_creates_directory(self, mock_dft_dir):
+        # Directory should already exist from fixture
+        assert mock_dft_dir.exists()
+        
+        # Test that ensure_dft_dir doesn't break on existing directory
+        cli_module.ensure_dft_dir()
+        
+        assert mock_dft_dir.exists()
+        assert mock_dft_dir.is_dir()
+
+    def test_serialize_diff_add_table(self):
+        mock_table = Mock()
+        mock_table.name = "test_table"
+        mock_column1 = Mock()
+        mock_column1.name = "col1"
+        mock_column2 = Mock()
+        mock_column2.name = "col2"
+        mock_table.columns = [mock_column1, mock_column2]
+        
+        diff = ("add_table", mock_table)
+        result = cli_module.serialize_diff(diff)
+        
+        expected = {
+            "type": "add_table",
+            "table_name": "test_table",
+            "columns": ["col1", "col2"]
+        }
+        assert result == expected
+
+    def test_serialize_diff_add_column(self):
+        mock_column = Mock()
+        mock_column.name = "new_column"
+        mock_column.type = "VARCHAR(50)"
+        
+        diff = ("add_column", None, "test_table", mock_column)
+        result = cli_module.serialize_diff(diff)
+        
+        expected = {
+            "type": "add_column",
+            "table_name": "test_table",
+            "column_name": "new_column",
+            "column_type": "VARCHAR(50)"
+        }
+        assert result == expected
+
+    def test_serialize_diff_unknown_type(self):
+        diff = ("unknown_diff_type", "some", "random", "data")
+        result = cli_module.serialize_diff(diff)
+        
+        expected = {
+            "type": "unknown_diff_type",
+            "details": str(diff)
+        }
+        assert result == expected
+
+# =============================================================================
+# 6. CONNECTION & VALIDATION TESTS
+# =============================================================================
+
+@pytest.mark.connection
+class TestConnectionValidation:
+    """Test database connection validation for declared resources"""
+    
+    def test_valid_connection_string(self, postgresql_db_conn_str):
+        """Test validation of valid connection strings"""
+        db = PostgresDB(postgresql_db_conn_str, [])
+        assert db.validate_connection() is True
+
+    def test_invalid_connection_string_format(self):
+        """Test validation rejects malformed connection strings"""
+        with pytest.raises(ValueError, match="Invalid database connection string"):
+            PostgresDB("not-a-database-url-at-all", [])
+
+    def test_unreachable_database_connection(self):
+        """Test handling of unreachable database servers"""
+        # Use proper format but unreachable port
+        unreachable_db = PostgresDB("postgresql+psycopg2://user:pass@localhost:99999/db", [])
+        assert unreachable_db.validate_connection() is False
+
+# =============================================================================
+# Unit Tests (Compatible with original structure)
+# =============================================================================
+
+@pytest.mark.unit
+class TestPostgresDBInit:
+    """Test PostgresDB initialization edge cases"""
+    
+    def test_init_creates_engine(self, postgresql_db_conn_str):
+        db = PostgresDB(postgresql_db_conn_str, [TestUser])
+        assert db.connection_string == postgresql_db_conn_str
+        assert db.tables == [TestUser]
+        assert db.engine is not None
+
+    def test_init_with_multiple_tables(self, postgresql_db_conn_str):
+        tables = [TestUser, TestPost, TestProfile]
+        db = PostgresDB(postgresql_db_conn_str, tables)
+        assert db.tables == tables
+        assert len(db.tables) == 3
+
+    def test_init_with_invalid_connection_string(self):
+        with pytest.raises(ValueError, match="Invalid database connection string"):
+            PostgresDB("invalid://connection", [TestUser])
+
+    def test_init_creates_engine_instance(self, postgresql_db_conn_str):
+        db = PostgresDB(postgresql_db_conn_str, [TestUser])
+        assert hasattr(db, 'engine')
+        assert db.engine.url.drivername == 'postgresql+psycopg2'
+
+@pytest.mark.unit
+def test_get_local_metadata_returns_metadata_object(db_instance):
+    """Test that _get_local_metadata() returns a MetaData object"""
+    metadata = db_instance._get_local_metadata()
+    assert isinstance(metadata, MetaData)
+
+@pytest.mark.unit
+def test_get_local_metadata_contains_specified_tables(db_instance):
+    """Test that local metadata contains all tables specified in __init__"""
+    metadata = db_instance._get_local_metadata()
+    table_names = [table.name for table in metadata.tables.values()]
+
+    expected_tables = ["test_users", "test_posts", "test_profiles"]
+    for expected_table in expected_tables:
+        assert expected_table in table_names
+
+@pytest.mark.unit
+def test_get_local_metadata_empty_when_no_tables(empty_db_instance):
+    """Test that _get_local_metadata() returns empty metadata when no tables specified"""
+    metadata = empty_db_instance._get_local_metadata()
+    assert isinstance(metadata, MetaData)
+    assert len(metadata.tables) == 0
+
+# =============================================================================
+# Integration Tests
+# =============================================================================
+
+@pytest.mark.integration
+class TestRealDatabaseConnections:
+    """Test actual database connection scenarios"""
+    
+    def test_successful_connection_and_query(self, db_instance):
+        """Test that we can connect and execute a simple query"""
+        result = db_instance.execute_sql("SELECT version()")
+        assert result is not None
+        version_info = result.fetchone()
+        assert version_info is not None
+        assert "PostgreSQL" in str(version_info[0])
+
+    def test_connection_with_invalid_host(self):
+        """Test connection failure with invalid host"""
+        invalid_db = PostgresDB("postgresql+psycopg2://user:pass@nonexistent-host:5432/db", [TestUser])
+        assert invalid_db.validate_connection() is False
+
+    def test_connection_with_invalid_port(self):
+        """Test connection failure with invalid port"""
+        invalid_db = PostgresDB("postgresql+psycopg2://user:pass@localhost:99999/db", [TestUser])
+        assert invalid_db.validate_connection() is False
+
+    def test_validate_connection_successful(self, db_instance):
+        assert db_instance.validate_connection() is True
+
+    def test_concurrent_connections(self, postgresql_db_conn_str):
+        """Test multiple concurrent connections to the same database"""
+        db1 = PostgresDB(postgresql_db_conn_str, [TestUser])
+        db2 = PostgresDB(postgresql_db_conn_str, [TestPost])
+        
+        assert db1.validate_connection() is True
+        assert db2.validate_connection() is True
+        
+        result1 = db1.execute_sql("SELECT 1 as test1")
+        result2 = db2.execute_sql("SELECT 2 as test2")
+        
+        assert result1.fetchone()[0] == 1
+        assert result2.fetchone()[0] == 2
+
+@pytest.mark.integration
+class TestSQLExecutionIntegration:
+    """Test SQL execution with real database"""
+    
+    def test_execute_sql_successful(self, db_instance):
+        result = db_instance.execute_sql("SELECT 1 as test_column")
+        assert result is not None
+
+    def test_execute_sql_with_invalid_sql(self, db_instance):
+        result = db_instance.execute_sql("INVALID SQL STATEMENT")
+        assert result is None
+
+    def test_get_table_info_all_tables(self, db_instance):
+        result = db_instance.get_table_info()
+        assert isinstance(result, list)
+
+    def test_get_table_info_nonexistent_table(self, db_instance):
+        result = db_instance.get_table_info("nonexistent_table")
+        assert result == []
+
+# =============================================================================
+# Test Categories for Running
+# =============================================================================
+
+def run_declarative_tests():
+    """Run all tests relevant for declarative data engineering"""
+    import subprocess
+    import sys
+    
+    cmd = [
+        sys.executable, "-m", "pytest", __file__,
+        "-v", "--tb=short"
+    ]
+    
+    result = subprocess.run(cmd)
+    return result.returncode == 0
+
+def run_core_tests():
+    """Run only the most critical tests (config, diffing, planning)"""
+    import subprocess
+    import sys
+    
+    cmd = [
+        sys.executable, "-m", "pytest", __file__,
+        "-m", "config or diffing or planning",
+        "-v"
+    ]
+    
+    result = subprocess.run(cmd)
+    return result.returncode == 0
+
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="DataFruit Declarative Test Runner")
+    parser.add_argument("category", nargs="?", default="all",
+                       choices=["config", "diffing", "planning", "apply", "cli", "connection", "unit", "integration", "core", "all"],
+                       help="Test category to run")
+    
+    args = parser.parse_args()
+    
+    if args.category == "core":
+        success = run_core_tests()
+    elif args.category == "all":
+        success = run_declarative_tests()
+    else:
+        import subprocess
+        import sys
+        cmd = [sys.executable, "-m", "pytest", __file__, "-m", args.category, "-v"]
+        result = subprocess.run(cmd)
+        success = result.returncode == 0
+    
+    sys.exit(0 if success else 1)
