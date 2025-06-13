@@ -1,6 +1,6 @@
 import pytest
 import pytest_postgresql  # Required for postgresql fixture
-from datafruit.datafruit import PostgresDB  # Import directly from module
+from datafruit.datafruit import PostgresDB  
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Engine, MetaData, create_engine, text
 from sqlalchemy.exc import ArgumentError, OperationalError
@@ -86,12 +86,12 @@ def test_init_creates_engine(postgresql_db_conn_str):
 
 def test_get_local_metadata_returns_metadata_object(db_instance):
     """Test that _get_local_metadata() returns a MetaData object"""
-    metadata = db_instance._get_local_metadata()  # Note the underscore!
+    metadata = db_instance._get_local_metadata()  
     assert isinstance(metadata, MetaData)
 
 def test_get_local_metadata_contains_specified_tables(db_instance):
     """Test that local metadata contains all tables specified in __init__"""
-    metadata = db_instance._get_local_metadata()  # Note the underscore!
+    metadata = db_instance._get_local_metadata()  
     table_names = [table.name for table in metadata.tables.values()]
 
     expected_tables = ["test_users", "test_posts", "test_profiles"]
@@ -100,7 +100,7 @@ def test_get_local_metadata_contains_specified_tables(db_instance):
 
 def test_get_local_metadata_empty_when_no_tables(empty_db_instance):
     """Test that _get_local_metadata() returns empty metadata when no tables specified"""
-    metadata = empty_db_instance._get_local_metadata()  # Note the underscore!
+    metadata = empty_db_instance._get_local_metadata()  
     assert isinstance(metadata, MetaData)
     assert len(metadata.tables) == 0
 
@@ -134,7 +134,6 @@ class TestPostgresDBSchemaDiff:
         assert result == []
 
     def test_get_schema_diff_integration(self, db_instance):
-        # This will return actual differences since tables don't exist yet
         diffs = db_instance.get_schema_diff()
         assert isinstance(diffs, list)
 
@@ -155,7 +154,6 @@ class TestPostgresDBSQLExecution:
         assert isinstance(result, list)
 
     def test_get_table_info_specific_table(self, db_instance):
-        # Create a test table first
         db_instance.execute_sql("CREATE TABLE IF NOT EXISTS specific_table (id INTEGER PRIMARY KEY, name VARCHAR(50) NOT NULL)")
         
         result = db_instance.get_table_info("specific_table")
