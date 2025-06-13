@@ -254,3 +254,245 @@ class TestPostgresDBSQLExecution:
         result = db_instance.get_table_info()
         
         assert result == []
+        
+        
+# ADD these CLI test classes to your test file:
+
+class TestCLIUtilityFunctions:
+    """Test CLI utility functions"""
+    
+    def test_ensure_dft_dir_creates_directory(self, mock_dft_dir):
+        assert not mock_dft_dir.exists()
+        
+        cli_module.ensure_dft_dir()
+        
+        assert mock_dft_dir.exists()
+        assert mock_dft_dir.is_dir()
+
+    def test_ensure_dft_dir_adds_to_gitignore(self, temp_dir, mock_dft_dir):
+        gitignore = temp_dir / '.gitignore'
+        gitignore.write_text("existing_content\n")
+        
+        with patch('datafruit.cli.Path.cwd', return_value=temp_dir):
+            cli_module.ensure_dft_dir()
+        
+        content = gitignore.read_text()
+        assert ".dft/" in content
+
+    def test_get_schema_hash(self, temp_dir):
+        schema_file = temp_dir / "test_schema.py"
+        content = "test content for hashing"
+        schema_file.write_text(content)
+        
+        hash_result = cli_module.get_schema_hash(schema_file)
+        
+        expected_hash = hashlib.sha256(content.encode()).hexdigest()
+        assert hash_result == expected_hash
+
+    def test_get_schema_hash_different_content(self, temp_dir):
+        schema_file1 = temp_dir / "schema1.py"
+        schema_file2 = temp_dir / "schema2.py"
+        
+        schema_file1.write_text("content 1")
+        schema_file2.write_text("content 2")
+        
+        hash1 = cli_module.get_schema_hash(schema_file1)
+        hash2 = cli_module.get_schema_hash(schema_file2)
+        
+        assert hash1 != hash2
+
+
+class TestCLIDiffSerialization:
+    """Test diff serialization functions"""
+    
+    def test_serialize_diff_add_table(self):
+        mock_table = Mock()
+        mock_table.name = "test_table"
+        mock_column1 = Mock()
+        mock_column1.name = "col1"
+        mock_column2 = Mock()
+        mock_column2.name = "col2"
+        mock_table.columns = [mock_column1, mock_column2]
+        
+        diff = ("add_table", mock_table)
+        result = cli_module.serialize_diff(diff)
+        
+        expected = {
+            "type": "add_table",
+            "table_name": "test_table",
+            "columns": ["col1", "col2"]
+        }
+        assert result == expected
+
+    def test_serialize_diff_add_column(self):
+        mock_column = Mock()
+        mock_column.name = "new_column"
+        mock_column.type = "VARCHAR(50)"
+        
+        diff = ("add_column", None, "test_table", mock_column)
+        result = cli_module.serialize_diff(diff)
+        
+        expected = {
+            "type": "add_column",
+            "table_name": "test_table",
+            "column_name": "new_column",
+            "column_type": "VARCHAR(50)"
+        }
+        assert result == expected
+
+    def test_serialize_diff_unknown_type(self):
+        diff = ("unknown_diff_type", "some", "random", "data")
+        result = cli_module.serialize_diff(diff)
+        
+        expected = {
+            "type": "unknown_diff_type",
+            "details": str(diff)
+        }
+        assert result == expected
+
+
+class TestCLIPlanManagement:
+    """Test plan save/load/clear functions"""
+    
+    def test_save_plan(self, mock_dft_dir):
+        diffs_by_db = [
+            ("postgresql://test1", [("add_table", Mock())]),
+            ("postgresql://test2", [("remove_column", Mock(), "table", Mock())])
+        ]
+        schema_hash = "test_hash_value"
+        
+        with patch('datafruit.cli.serialize_diff') as mock_serialize:
+            mock_serialize.return_value = {"type": "test", "details": "test"}
+            cli_module.save_plan(diffs_by_db, schema_hash)
+        
+        plan_file = mock_dft_dir / "plan.json"
+        assert plan_file.exists()
+        
+        plan_data = json.loads(plan_file.read_text())
+        assert plan_data["schema_hash"] == schema_hash
+        assert len(plan_data["databases"]) == 2
+
+    def test_load_plan_existing_valid(self, mock_dft_dir):
+        plan_data = {
+            "timestamp": datetime.now().isoformat(),
+            "schema_hash": "test_hash",
+            "schema_file": "dft.py",
+            "databases": [],
+            "expiry_minutes": 10
+        }
+        
+        plan_file = mock_dft_dir / "plan.json"
+        mock_dft_dir.mkdir(parents=True, exist_ok=True)
+        plan_file.write_text(json.dumps(plan_data))
+        
+        result = cli_module.load_plan()
+        
+        assert result is not None
+        assert result["schema_hash"] == "test_hash"
+
+    def test_load_plan_nonexistent(self, mock_dft_dir):
+        result = cli_module.load_plan()
+        assert result is None
+
+    def test_load_plan_expired(self, mock_dft_dir):
+        expired_time = datetime.now() - timedelta(minutes=15)
+        plan_data = {
+            "timestamp": expired_time.isoformat(),
+            "schema_hash": "test_hash",
+            "expiry_minutes": 10
+        }
+        
+        plan_file = mock_dft_dir / "plan.json"
+        mock_dft_dir.mkdir(parents=True, exist_ok=True)
+        plan_file.write_text(json.dumps(plan_data))
+        
+        result = cli_module.load_plan()
+        
+        assert result is None
+        assert not plan_file.exists()  # Should be deleted
+
+    def test_clear_plan_existing(self, mock_dft_dir):
+        plan_file = mock_dft_dir / "plan.json"
+        mock_dft_dir.mkdir(parents=True, exist_ok=True)
+        plan_file.write_text('{"test": "data"}')
+        
+        assert plan_file.exists()
+        
+        cli_module.clear_plan()
+        
+        assert not plan_file.exists()
+
+
+class TestCLIProjectManagement:
+    """Test project management functions"""
+    
+    def test_datafruit_default_init_success(self, temp_dir):
+        target_dir = temp_dir / "new_project"
+        
+        result = cli_module.datafruit_default_init(str(target_dir))
+        
+        assert result is True
+        assert target_dir.exists()
+        dft_file = target_dir / "dft.py"
+        assert dft_file.exists()
+        content = dft_file.read_text()
+        assert "import datafruit as dft" in content
+        assert "class User(SQLModel, table=True):" in content
+
+    def test_project_exists_with_python_files(self, temp_dir):
+        (temp_dir / "test.py").write_text("# python file")
+        
+        result = cli_module.project_exists(temp_dir)
+        
+        assert result is True
+
+    def test_project_exists_without_python_files(self, temp_dir):
+        (temp_dir / "test.txt").write_text("not python")
+        
+        result = cli_module.project_exists(temp_dir)
+        
+        assert result is False
+
+    def test_is_valid_project_name_valid_names(self):
+        valid_names = ["project1", "my-project", "my_project", "Project123", "p"]
+        for name in valid_names:
+            assert cli_module.is_valid_project_name(name) is True
+
+    def test_is_valid_project_name_invalid_names(self):
+        invalid_names = ["", "project with spaces", "project@symbol", "project.dot", None]
+        for name in invalid_names:
+            assert cli_module.is_valid_project_name(name) is False
+
+
+class TestCLICommands:
+    """Test CLI command functions"""
+    
+    @patch('datafruit.cli.typer.Exit')
+    @patch('datafruit.cli.console')
+    def test_init_command_existing_project(self, mock_console, mock_exit, temp_dir):
+        with patch('datafruit.cli.Path.cwd', return_value=temp_dir), \
+             patch('datafruit.cli.project_exists', return_value=True):
+            
+            cli_module.init()
+            
+            mock_exit.assert_called_with(1)
+
+    @patch('datafruit.cli.typer.Exit')
+    @patch('datafruit.cli.console')
+    def test_plan_command_no_schema_file(self, mock_console, mock_exit, temp_dir):
+        with patch('datafruit.cli.Path', return_value=temp_dir / "nonexistent.py"):
+            cli_module.plan()
+            mock_exit.assert_called_with(1)
+
+    @patch('datafruit.cli.console')
+    def test_apply_command_no_plan(self, mock_console, temp_dir):
+        schema_file = temp_dir / "dft.py"
+        schema_file.write_text("# schema")
+        
+        with patch('datafruit.cli.Path', return_value=schema_file), \
+             patch('datafruit.cli.load_plan', return_value=None), \
+             patch('datafruit.cli.typer.Exit') as mock_exit:
+            
+            cli_module.apply()
+            mock_exit.assert_called_with(1)
+            
