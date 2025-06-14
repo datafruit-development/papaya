@@ -1,0 +1,47 @@
+---
+title: "Product Roadmap"
+description: "Our development roadmap and upcoming features"
+---
+
+Stay up to date with our latest developments and upcoming features. This roadmap reflects our current priorities and may change based on user feedback and business needs.
+
+<Update label="In Development" description="Actively being built" tags={["Current", "Development"]}>
+  ## Currently Building
+
+  <Steps>
+    <Step title="PyJob">
+      Define standalone Python functions with `@pyjob`. These can run independently or be composed in DAGs.
+    </Step>
+    <Step title="SQLJob">
+      Define SQL logic directly in Python functions using `@sqljob` decorators.
+    </Step>
+  </Steps>
+</Update>
+
+<Update label="Planned" description="On our near-term roadmap" tags={["Planned", "Design"]}>
+  ## Planned Features
+
+  <Steps>
+    <Step title="Lineage Tracking">
+      Track data dependencies and lineage for better data governance and auditability.
+    </Step>
+    <Step title="Backwards compatibility with DBT">
+      Allow import of existing DBT projects into Datafruit for migration or hybrid use.
+    </Step>
+    <Step title="Automatic Backfill Planning">
+      Compute which downstream views/jobs require recomputation.
+    </Step>
+    <Step title="Interactive Visualization">
+      Display dependencies and execution flow in a graph view for navigation and debugging.
+    </Step>
+    <Step title="Asset Impact Tracking">
+      Show downstream assets impacted by changes in any pipeline or view.
+    </Step>
+    <Step title="Object Storage Management">
+      Manage object storage for data assets.
+    </Step>
+    <Step title="Iceberg/Parquet Support">
+      Support for Iceberg and Parquet formats.
+    </Step>
+  </Steps>
+</Update>

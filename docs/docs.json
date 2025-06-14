@@ -27,6 +27,12 @@
               "essentials/navigation",
               "essentials/reusable-snippets"
             ]
+          },
+          {
+            "group": "Roadmap and Changelog",
+            "pages": ["roadmap-changelog/roadmap",
+             "roadmap-changelog/changelog"
+            ]
           }
         ]
       }
