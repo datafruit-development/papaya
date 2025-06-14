@@ -1,5 +1,4 @@
 import pytest
-import pytest_postgresql
 from datafruit.datafruit import PostgresDB
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Engine, MetaData
