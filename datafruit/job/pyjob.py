@@ -5,13 +5,12 @@ import math
 import psutil
 import pandas as pd
 import logging
-from sqlmodel import SQLModel, Field
 from typing import Optional, Union, Type, Dict, Callable, Any, List
 from enum import Enum 
 from datafruit import PostgresDB
-from sqlmodel import Session, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 from functools import wraps 
 
 
@@ -26,19 +25,15 @@ class _CircuitState(Enum):
     OPEN="OPEN"
     HALF_OPEN="HALF_OPEN"
  
- 
 
 def pyjob(
     # Input/Output
-    input: Optional[Union[pd.DataFrame, List, List[SQLModel], SQLModel]] = None,
-    output: Optional[Union[Type[pd.DataFrame], Type[List], Type[SQLModel], str]] = None,
+    input_df: Optional[pd.DataFrame] = None,
     
-    # Database Configuration (alternative to input)
+    # Database Configuration (alternative to input_df)
     db: Optional[PostgresDB] = None,
-    table: Optional[Type[SQLModel]] = None,
-    where_clause: Optional[Any] = None,
-    order_by: Optional[Any] = None,
-    limit: Optional[int] = None,
+    query: Optional[str] = None,
+    table_name: Optional[str] = None,
     
     # Processing config for ray
     batch_size: Optional[int] = None,
@@ -58,11 +53,30 @@ def pyjob(
     memory_threshold: float = 0.8
 ): 
     """
-    A flexible decorator for parallel data transformations using Ray with explicit input/output support.
+    A flexible decorator for parallel data transformations using Ray with DataFrame and Database support.
     
     This decorator handles all the parallelization complexity while giving you complete flexibility 
-    in your transformation function. You write simple functions that process ONE item at a time, 
+    in your transformation function. You write simple functions that process ONE row/record at a time, 
     and the decorator automatically applies it to ALL items in parallel.
+    
+    Your function determines the output type - the decorator just parallelizes whatever you return.
+    
+    Args:
+        input_df: DataFrame to process
+        db: PostgresDB instance for database operations
+        query: SQL query to fetch data from database
+        table_name: Table name to fetch all records from (alternative to query)
+        batch_size: Size of batches for parallel processing
+        num_cpus: Number of CPUs per Ray task
+        memory: Memory allocation per Ray task
+        max_retries: Maximum retry attempts for failed tasks
+        retry_exceptions: List of exceptions to retry on
+        enable_circuit_breaker: Enable circuit breaker pattern
+        circuit_failure_threshold: Number of failures before opening circuit
+        circuit_timeout: Timeout before trying to close circuit
+        enable_monitoring: Enable memory and performance monitoring
+        auto_gc: Automatically trigger garbage collection
+        memory_threshold: Memory threshold for triggering GC
     """ 
     circuit_breaker_state = {
         'state': _CircuitState.CLOSED,  
@@ -122,81 +136,11 @@ def pyjob(
         # Adaptive batching based on available CPU cores
         num_workers = int(ray.available_resources().get("CPU", 4))
         optimal = max(50, data_size // (num_workers * 4))  # More granular batches
-        return optimal  # might need to implement a cap for memory safety. but not now 🗿
+        return optimal
 
-    def _detect_input_type(data):
-        """Detect the type of input data."""
-        if isinstance(data, pd.DataFrame):
-            return 'dataframe'
-        elif isinstance(data, list):
-            if data and isinstance(data[0], SQLModel):
-                return 'sqlmodel_list'
-            else:
-                return 'list'
-        elif isinstance(data, SQLModel):
-            return 'sqlmodel_single'
-        else:
-            return 'unknown'
-
-    def _detect_output_type(sample_result):
-        """Detect the expected output type based on function result."""
-        if isinstance(sample_result, pd.Series):
-            return 'dataframe_row'
-        elif isinstance(sample_result, pd.DataFrame):
-            return 'dataframe'
-        elif isinstance(sample_result, SQLModel):
-            return 'sqlmodel'
-        elif isinstance(sample_result, dict):
-            return 'dict'
-        elif isinstance(sample_result, list):
-            return 'list'
-        else:
-            return 'other'
-    def _convert_results_to_output_format(results: List[Any], expected_output):
-        """Convert results to expected output format."""
-        if not results:
-            if expected_output == pd.DataFrame or expected_output == 'dataframe':
-                return pd.DataFrame()
-            else:
-                return []
-
-        # Detect actual result type
-        sample = results[0]
-        result_type = _detect_output_type(sample)
-
-        # Handle output conversion based on expected output
-        if expected_output == pd.DataFrame or expected_output == 'dataframe':
-            if result_type == 'dataframe_row':
-                # Convert Series back to DataFrame
-                return pd.DataFrame(results).reset_index(drop=True)
-            elif result_type == 'dict':
-                # Convert dicts to DataFrame
-                return pd.DataFrame(results)
-            elif result_type == 'dataframe':
-                # Concatenate DataFrames
-                return pd.concat(results, ignore_index=True)
-            else:
-                # Try to convert other types to DataFrame
-                return pd.DataFrame(results)
-        
-        elif hasattr(expected_output, '__mro__') and SQLModel in expected_output.__mro__:
-            # Expected output is SQLModel type
-            if result_type == 'sqlmodel':
-                return results
-            else:
-                logging.warning(f"Expected SQLModel output but got {result_type}")
-                return results
-        
-        elif expected_output == List or expected_output == 'list':
-            # Expected output is List
-            if result_type in ['list', 'dict', 'sqlmodel', 'other']:
-                return results
-            else:
-                return results
-        
-        else:
-            # Default: return as-is
-            return results
+    def _collect_results(results: List[Any]) -> List[Any]:
+        """Simply return the results as-is - let the user function determine output format."""
+        return [r for r in results if r is not None]  # Filter out None results
         
     def _process_batch_with_ray(func: Callable, data: List[Any]) -> List[Any]:
         """Process a list of items in parallel batches using Ray."""
@@ -237,17 +181,7 @@ def pyjob(
             batch_results = []
             for item in batch:
                 try:
-                    # Rehydration Step: If a model_class was provided, convert
-                    # the dictionary back into a SQLModel object.
-                    if model_class:
-                        # Use model_validate (more robust than **) to create the instance from the dict.
-                        rehydrated_item = model_class.model_validate(item)
-                    else:
-                        rehydrated_item = item
-                    
-                    # Pass the rehydrated object to the original user function.
-                    result = func(rehydrated_item)
-                    
+                    result = func(item)
                     if result is not None:
                         batch_results.append(result)
                 except Exception as e:
@@ -281,7 +215,7 @@ def pyjob(
         return final_results
 
     def _process_dataframe(func: Callable, df: pd.DataFrame) -> Any:
-        """Process DataFrame row by row and return results in expected format."""
+        """Process DataFrame row by row and return results as-is."""
         logging.info(f"Processing DataFrame with {len(df)} rows.")
         
         # Convert DataFrame to list of Series (rows)
@@ -290,125 +224,73 @@ def pyjob(
         # Process all rows
         processed_rows = _process_batch_with_ray(func, rows)
         
-        # Convert to expected output format
-        result = _convert_results_to_output_format(processed_rows, output)
+        # Return results as-is
+        result = _collect_results(processed_rows)
         
-        if isinstance(result, pd.DataFrame):
-            logging.info(f"DataFrame processing complete: {len(df)} → {len(result)} rows.")
-        else:
-            logging.info(f"DataFrame processing complete: {len(df)} → {len(result)} items.")
-        
+        logging.info(f"DataFrame processing complete: {len(df)} → {len(result)} items.")
         return result
 
-    def _process_list(func: Callable, data_list: List[Any]) -> Any:
-        """Process list item by item and return results in expected format."""
-        input_type = _detect_input_type(data_list)
-        logging.info(f"Processing list of {len(data_list)} items (type: {input_type}).")
+    def _process_from_database(func: Callable, db, query=None, table_name=None) -> Any:
+        """Handle memory-efficient database processing."""
+        if not db:
+            raise ValueError("Database instance must be provided for database mode.")
         
-        
-        model_class_for_rehydration = None
-        if input_type == 'sqlmodel_list':
-            model_class_for_rehydration = type(data_list[0])
-            logging.info(f"Dehydrating {len(data_list)} {model_class_for_rehydration.__name__} objects for serialization.")
-            # Create a new list of dictionaries.
-            data_to_process = [item.model_dump() for item in data_list]
-        else:
-            data_to_process = data_list
-        # Process all items
-        
-        processed_items = _process_batch_with_ray(func, data_to_process, model_class_for_rehydration)
-        
-        # Convert to expected output format
-        result = _convert_results_to_output_format(processed_items, output)
-        
-        logging.info(f"List processing complete: {len(data_list)} → {len(result)} items.")
-        return result
-
-    def _process_single_sqlmodel(func: Callable, sqlmodel_obj: SQLModel) -> Any:
-        """Process single SQLModel object."""
-        logging.info(f"Processing single {type(sqlmodel_obj).__name__} object.")
-        
-        try:
-            result = func(sqlmodel_obj)
-            logging.info(f"Single SQLModel processing complete.")
-            return result
-        except Exception as e:
-            logging.error(f"Processing failed for SQLModel object: {e}")
-            raise
-
-    def _process_from_database(func: Callable, db, table_class, where_clause=None, 
-                             order_by=None, limit=None) -> Any:
-        """Handle memory-efficient database processing with auto-save."""
-        if not db or not table_class:
-            raise ValueError("Both `db` and `table` must be provided for database mode.")
+        if not query and not table_name:
+            raise ValueError("Either `query` or `table_name` must be provided for database mode.")
 
         start_time = time.time()
-        table_name = table_class.__tablename__
-        logging.info(f"Starting database processing for table: '{table_name}'")
+        logging.info(f"Starting database processing")
 
-        # Validate connection and sync schema
+        # Validate connection
         if not db.validate_connection():
             raise ConnectionError("Database connection failed.")
-        db.sync_schema()
 
-        # Memory-efficient data extraction using IDs
+        # Build query
+        if query:
+            sql_query = query
+        else:
+            sql_query = f"SELECT * FROM {table_name}"
+
+        # Memory-efficient data extraction
         SessionLocal = sessionmaker(bind=db.engine)
         with SessionLocal() as session:
-            # Get record IDs for batch processing
-            id_query = select(table_class.id)
-            if where_clause is not None:
-                id_query = id_query.where(where_clause)
-            if order_by is not None:
-                id_query = id_query.order_by(order_by)
-            if limit is not None:
-                id_query = id_query.limit(limit)
+            # Execute query and fetch results in chunks
+            result = session.execute(text(sql_query))
             
-            record_ids = list(session.exec(id_query).all())
-
-            if not record_ids:
-                logging.warning("No records found matching criteria.")
-                return _convert_results_to_output_format([], output)
-
-            # Process in memory-efficient batches
-            db_batch_size = _get_optimal_batch_size(len(record_ids))
-            logging.info(f"Processing {len(record_ids)} records in batches of {db_batch_size}.")
+            # Convert to list of dictionaries for processing
+            columns = result.keys()
+            all_rows = []
             
-            all_results = []
+            # Fetch in chunks to manage memory
+            chunk_size = _get_optimal_batch_size(1000)  # Default estimate
             
-            for i in range(0, len(record_ids), db_batch_size):
-                batch_ids = record_ids[i:i + db_batch_size]
+            while True:
+                chunk = result.fetchmany(chunk_size)
+                if not chunk:
+                    break
                 
-                # Fetch only this batch of records
-                batch_records = list(session.exec(
-                    select(table_class).where(table_class.id.in_(batch_ids))
-                ).all())
+                # Convert rows to dictionaries
+                chunk_dicts = [dict(zip(columns, row)) for row in chunk]
+                all_rows.extend(chunk_dicts)
                 
-                # Process batch
-                batch_results = _process_batch_with_ray(func, batch_records)
-                all_results.extend(batch_results)
-                
-                # Auto-save SQLModel results to database
-                if batch_results and output and hasattr(output, '__mro__') and SQLModel in output.__mro__:
-                    sqlmodel_results = [r for r in batch_results if isinstance(r, SQLModel)]
-                    if sqlmodel_results:
-                        try:
-                            session.add_all(sqlmodel_results)
-                            session.commit()
-                            logging.info(f"Auto-saved {len(sqlmodel_results)} {output.__name__} objects to database.")
-                        except Exception as e:
-                            logging.error(f"Database save failed: {e}")
-                            session.rollback()
-                            raise
-                
-                # Memory management for large datasets
-                if i % (db_batch_size * 10) == 0:
+                # Monitor memory usage
+                if len(all_rows) % (chunk_size * 10) == 0:
                     _monitor_memory()
+
+            if not all_rows:
+                logging.warning("No records found matching criteria.")
+                return []
+
+            logging.info(f"Processing {len(all_rows)} records from database.")
+            
+            # Process all rows
+            all_results = _process_batch_with_ray(func, all_rows)
             
             if enable_monitoring:
                 duration = time.time() - start_time
                 logging.info(f"Database processing completed in {duration:.2f}s.")
                 
-            return _convert_results_to_output_format(all_results, output)
+            return _collect_results(all_results)
 
     # =================================================================================
     # == DECORATOR WRAPPER
@@ -433,36 +315,21 @@ def pyjob(
                 result = None
                 
                 # Database Mode
-                if db is not None and table is not None:
+                if db is not None:
                     logging.info(f"Executing {func.__name__} in DATABASE mode.")
-                    result = _process_from_database(
-                        func, db=db, table_class=table,
-                        where_clause=where_clause, order_by=order_by, limit=limit
-                    )
+                    result = _process_from_database(func, db=db, query=query, table_name=table_name)
                 
                 # DataFrame Mode
-                elif input is not None and isinstance(input, pd.DataFrame):
+                elif input_df is not None:
                     logging.info(f"Executing {func.__name__} in DATAFRAME mode.")
-                    result = _process_dataframe(func, input)
-                
-                # Single SQLModel Mode
-                elif input is not None and isinstance(input, SQLModel):
-                    logging.info(f"Executing {func.__name__} in SINGLE_SQLMODEL mode.")
-                    result = _process_single_sqlmodel(func, input)
-                
-                # List Mode (includes SQLModel lists)
-                elif input is not None and isinstance(input, list):
-                    logging.info(f"Executing {func.__name__} in LIST mode.")
-                    result = _process_list(func, input)
+                    result = _process_dataframe(func, input_df)
                 
                 # No valid input specified
                 else:
                     raise ValueError(
                         "No valid input specified. Provide one of:\n"
-                        "- input=dataframe for DataFrame processing\n"
-                        "- input=list for list processing\n"
-                        "- input=sqlmodel_object for single SQLModel processing\n"
-                        "- db=postgres_db + table=TableClass for database processing"
+                        "- input_df=dataframe for DataFrame processing\n"
+                        "- db=postgres_db + (query=sql_query OR table_name=table) for database processing"
                     )
 
                 _update_circuit_breaker(success=True)
@@ -479,9 +346,9 @@ def pyjob(
             'state': _CircuitState.CLOSED, 'failure_count': 0, 'last_failure_time': None
         })
         wrapper.get_stats = lambda: {
-            'input_type': _detect_input_type(input) if input is not None else 'database',
-            'output_type': output.__name__ if hasattr(output, '__name__') else str(output),
-            'table': table.__tablename__ if table else None,
+            'input_type': 'dataframe' if input_df is not None else 'database',
+            'table_name': table_name,
+            'has_query': query is not None,
             'batch_size': batch_size,
             'num_cpus': num_cpus,
             'circuit_breaker': wrapper.get_circuit_breaker_status(),
@@ -491,200 +358,285 @@ def pyjob(
         return wrapper
     return decorator
         
-        
+
 if __name__ == "__main__":
     from datetime import datetime
-    from typing import Optional
-    import pandas as pd
-    from sqlmodel import SQLModel, Field
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
     
-    # NOTE: The pyjob decorator and its dependencies (like ray) are assumed to be defined above.
-
-    # --- Model Definitions ---
-
-    class User(SQLModel, table=True):
+    # Your actual database setup
+    import datafruit as dft
+    from sqlmodel import Field, SQLModel
+    from typing import Optional
+    
+    class users(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
-        first_name: str
-        last_name: str
-        email: str
-        age: int
-        active: bool = True
-        created_at: datetime = Field(default_factory=datetime.utcnow)
-        # Added to prevent errors in the cleaning function
+        username: str = Field(unique=True)
+        email: str = Field(unique=True)
         full_name: Optional[str] = None
+        is_active: bool = Field(default=True)
+        created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    class ProcessedUser(SQLModel, table=True):
+    class posts(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
-        user_id: int
-        full_name: str
-        email_domain: str
-        category: str
-        processed_at: datetime = Field(default_factory=datetime.utcnow)
+        title: str = Field(index=True)
+        content: str
+        published: bool = Field(default=False)
+        created_at: datetime = Field(default_factory=datetime.utcnow)
+        updated_at: Optional[datetime] = None
 
-    class UserAnalytics(SQLModel, table=True):
-        id: Optional[int] = Field(default=None, primary_key=True)
-        user_id: int
-        engagement_score: float
-        risk_level: str
-        analysis_date: datetime = Field(default_factory=datetime.utcnow)
-
-    # --- Sample Data ---
-
+    # Your database connection
+    postgres_db = dft.PostgresDB(
+        "top secret stuff",
+        [users, posts]
+    )
+    
+    # Sample data
     sample_df = pd.DataFrame({
         'first_name': ['Alice', 'Bob', 'Carol', 'David'],
         'last_name': ['Johnson', 'Smith', 'Williams', 'Brown'],
-        'email': ['ALICE@GMAIL.COM', 'bob@YAHOO.com', 'carol@company.org', 'david@test.COM'],
+        'score': [100, 50, 200, 75],  # Third column with numbers
         'age': [25, 17, 30, 45],
         'price': [100, 50, 200, 75]
     })
-
-    sample_users = [
-        User(id=1, first_name="Alice", last_name="Johnson", email="alice@test.com", age=25),
-        User(id=2, first_name="Bob", last_name="Smith", email="bob@test.com", age=17),
-        User(id=3, first_name="Carol", last_name="Williams", email="carol@test.com", age=30)
-    ]
-
-    single_user = User(id=1, first_name="Alice", last_name="Johnson", email="alice@test.com", age=25)
-
-    print("Running PyJob Decorator Test Suite")
+    
+    print("🚀 Simplified PyJob Decorator - DataFrame and Database Support")
     print("=" * 70)
-
-    # --- Test 1: DataFrame to DataFrame Transformation ---
-    print("\n--- Test 1: DataFrame to DataFrame ---")
+    
+    # Test database connection
+    print("\n🔌 Testing Database Connection...")
+    try:
+        if postgres_db.validate_connection():
+            print("✅ Database connection successful!")
+            postgres_db.sync_schema()  # Ensure tables exist
+            print("✅ Schema synchronized!")
+            
+            # Optional: Add some test data to demonstrate database features
+            print("\n💾 Adding Sample Data for Testing...")
+            try:
+                from sqlmodel import Session, select
+                with Session(postgres_db.engine) as session:
+                    # Check if we already have users
+                    existing_users = session.exec(select(users)).first()
+                    if not existing_users:
+                        # Add sample users
+                        sample_users = [
+                            users(username="alice_demo", email="alice@gmail.com", full_name="Alice Johnson"),
+                            users(username="bob_demo", email="bob@company.com", full_name="Bob Smith"),
+                            users(username="carol_demo", email="carol@yahoo.com", full_name="Carol Williams"),
+                        ]
+                        for user in sample_users:
+                            session.add(user)
+                        
+                        # Add sample posts
+                        sample_posts = [
+                            posts(title="Welcome Post", content="This is a welcome post with some content to analyze. It has multiple sentences and words.", published=True),
+                            posts(title="Draft Post", content="This is a draft post that is not published yet.", published=False),
+                            posts(title="Long Article", content="This is a much longer article with extensive content. " * 20, published=True),
+                        ]
+                        for post in sample_posts:
+                            session.add(post)
+                        
+                        session.commit()
+                        print("✅ Sample data added successfully!")
+                    else:
+                        print("📝 Sample data already exists, skipping...")
+            except Exception as e:
+                print(f"⚠️  Could not add sample data: {e}")
+                print("   Database examples will show empty results")
+                
+        else:
+            print("❌ Database connection failed!")
+            # Continue with DataFrame examples only
+    except Exception as e:
+        print(f"❌ Database error: {e}")
+        print("   Continuing with DataFrame examples only...")
+    
+    # Example 0: Simple test - multiply third column by 3
+    print("\n🧮 Example 0: Multiply Third Column by 3")
     @pyjob(
-        input=sample_df,
-        output=pd.DataFrame,
-        batch_size=2
+        input_df=sample_df, 
+        batch_size=2, 
+        enable_monitoring=True
+    )
+    def multiply_third_column_by_3(row):
+        """Multiply the third column (score) by 3."""
+        modified_row = row.copy()
+        modified_row['score'] = row['score'] * 3  # Third column times 3
+        return modified_row
+    
+    try:
+        result = multiply_third_column_by_3()
+        print(f"✅ Processed {len(sample_df)} rows → {len(result)} items")
+        print(f"   Output type: {type(result).__name__} of {type(result[0]).__name__}")
+        print(f"   Original scores: {sample_df['score'].tolist()}")
+        print(f"   Modified scores: {[r['score'] for r in result]}")
+        print(f"   Sample: {result[0]['first_name']} score: {sample_df.iloc[0]['score']} → {result[0]['score']}")
+    except Exception as e:
+        print(f"❌ Error: {e}")
+    
+    # Example 1: DataFrame → Whatever your function returns
+    print("\n📊 Example 1: DataFrame Processing")
+    @pyjob(
+        input_df=sample_df, 
+        batch_size=2, 
+        enable_monitoring=True
     )
     def clean_dataframe_row(row):
-        """Processes a single DataFrame row."""
-        row['email'] = row['email'].lower().strip()
-        row['full_name'] = f"{row['first_name']} {row['last_name']}"
-        row['age_group'] = 'adult' if row['age'] >= 18 else 'minor'
-        row['price_category'] = 'expensive' if row['price'] > 100 else 'affordable'
-        return row
-
+        """Process DataFrame row - return whatever you want."""
+        cleaned_row = row.copy()
+        cleaned_row['full_name'] = f"{row['first_name']} {row['last_name']}"
+        cleaned_row['age_group'] = 'adult' if row['age'] >= 18 else 'minor'
+        cleaned_row['score_category'] = 'high' if row['score'] > 100 else 'low'
+        return cleaned_row
+    
     try:
         cleaned_df = clean_dataframe_row()
-        print("STATUS: SUCCEEDED")
-        print(f"  Input: DataFrame (4 rows) -> Output: DataFrame ({len(cleaned_df)} rows)")
-        print(f"  New columns added: {[col for col in cleaned_df.columns if col not in sample_df.columns]}")
+        print(f"✅ DataFrame processing: {len(sample_df)} → {len(cleaned_df)} items")
+        print(f"   Output type: {type(cleaned_df).__name__} of {type(cleaned_df[0]).__name__}")
+        if hasattr(cleaned_df[0], 'get'):  # Check if it's a dict-like object
+            print(f"   Sample: {cleaned_df[0].get('full_name', 'N/A')}")
+        else:
+            print(f"   Sample: {cleaned_df[0]}")
     except Exception as e:
-        print(f"STATUS: FAILED")
-        print(f"  Error: {e}")
-
-    # --- Test 2: In-place Editing of SQLModel List ---
-    print("\n--- Test 2: List[SQLModel] to List[SQLModel] (In-place edit) ---")
+        print(f"❌ Error: {e}")
+    
+    # Example 2: DataFrame → Return dictionaries
+    print("\n📋 Example 2: DataFrame → Custom Objects")
     @pyjob(
-        input=sample_users,
-        output=User,
-        batch_size=2
+        input_df=sample_df,
+        batch_size=2,
+        enable_monitoring=True
     )
-    def clean_user_objects(user):
-        """Cleans User objects by normalizing email and adding full_name."""
-        user.email = user.email.lower().strip()
-        user.full_name = f"{user.first_name} {user.last_name}"
-        return user
-
+    def extract_summary_data(row):
+        """Extract summary data and return as dict - your choice of output."""
+        return {
+            'full_name': f"{row['first_name']} {row['last_name']}",
+            'performance_level': 'excellent' if row['score'] > 150 else 'good' if row['score'] > 75 else 'needs_improvement',
+            'age_category': 'adult' if row['age'] >= 18 else 'minor'
+        }
+    
     try:
-        cleaned_users = clean_user_objects()
-        print("STATUS: SUCCEEDED")
-        print(f"  Input: List[User] (3 items) -> Output: List[User] ({len(cleaned_users)} items)")
-        print(f"  Sample result: {cleaned_users[0].full_name} ({cleaned_users[0].email})")
+        summary_list = extract_summary_data()
+        print(f"✅ DataFrame processing: {len(sample_df)} → {len(summary_list)} items")
+        print(f"   Output type: {type(summary_list).__name__} of {type(summary_list[0]).__name__}")
+        print(f"   Sample: {summary_list[0]}")
     except Exception as e:
-        print(f"STATUS: FAILED")
-        print(f"  Error: {e}")
-
-    # --- Test 3: Transforming List[SQLModel] to a Different SQLModel ---
-    print("\n--- Test 3: List[User] to List[ProcessedUser] Transformation ---")
+        print(f"❌ Error: {e}")
+    
+    # Example 3: Database Processing (with table name) - Your actual users table
+    print("\n🗄️  Example 3: Database Processing (Your Users Table)")
     @pyjob(
-        input=sample_users,
-        output=ProcessedUser,
-        batch_size=2
+        db=postgres_db,
+        table_name="users",
+        batch_size=10,
+        enable_monitoring=True
     )
-    def transform_to_processed_user(user):
-        """Transforms a User object into a ProcessedUser object."""
-        return ProcessedUser(
-            user_id=user.id,
-            full_name=f"{user.first_name} {user.last_name}",
-            email_domain=user.email.split('@')[1],
-            category='adult' if user.age >= 18 else 'minor'
-        )
-
+    def analyze_users_from_table(user_row):
+        """Analyze users from your actual database table."""
+        return {
+            'user_id': user_row['id'],
+            'username': user_row['username'],
+            'email_domain': user_row['email'].split('@')[1] if '@' in user_row['email'] else 'unknown',
+            'has_full_name': user_row['full_name'] is not None,
+            'account_age_days': (datetime.utcnow() - user_row['created_at']).days if user_row['created_at'] else 0,
+            'status': 'active' if user_row['is_active'] else 'inactive'
+        }
+    
     try:
-        processed_users = transform_to_processed_user()
-        print("STATUS: SUCCEEDED")
-        print(f"  Input: List[User] (3 items) -> Output: List[ProcessedUser] ({len(processed_users)} items)")
-        print(f"  Sample result: {processed_users[0].full_name} (Category: {processed_users[0].category})")
+        user_analysis = analyze_users_from_table()
+        print(f"✅ Database processing: Retrieved and analyzed {len(user_analysis)} users")
+        print(f"   Output type: {type(user_analysis).__name__}")
+        if user_analysis:
+            print(f"   Sample analysis: {user_analysis[0]}")
+        else:
+            print(f"   📝 Note: No users found in database - tables may be empty")
     except Exception as e:
-        print(f"STATUS: FAILED")
-        print(f"  Error: {e}")
-
-    # --- Test 4: Processing a Single SQLModel Object ---
-    print("\n--- Test 4: Single SQLModel Transformation ---")
+        print(f"❌ Error: {e}")
+    
+    # Example 4: Database Processing (with custom query) - Your posts
+    print("\n🔍 Example 4: Database Processing (Your Posts with Custom Query)")
     @pyjob(
-        input=single_user,
-        output=UserAnalytics
+        db=postgres_db,
+        query="SELECT * FROM posts WHERE published = true ORDER BY created_at DESC LIMIT 100",
+        batch_size=5,
+        enable_monitoring=True
     )
-    def analyze_single_user(user):
-        """Analyzes a single user and creates an analytics record."""
-        return UserAnalytics(
-            user_id=user.id,
-            engagement_score=user.age * 0.1,
-            risk_level='low' if user.age > 25 else 'high'
-        )
-
+    def process_published_posts(post_row):
+        """Process published posts with custom analysis."""
+        content_length = len(post_row['content']) if post_row['content'] else 0
+        return {
+            'post_id': post_row['id'],
+            'title': post_row['title'],
+            'content_length': content_length,
+            'word_count': len(post_row['content'].split()) if post_row['content'] else 0,
+            'category': 'long' if content_length > 1000 else 'medium' if content_length > 500 else 'short',
+            'days_since_created': (datetime.utcnow() - post_row['created_at']).days if post_row['created_at'] else 0
+        }
+    
     try:
-        analytics = analyze_single_user()
-        print("STATUS: SUCCEEDED")
-        print(f"  Input: User -> Output: {type(analytics).__name__}")
-        print(f"  Result: Engagement={analytics.engagement_score}, Risk='{analytics.risk_level}'")
+        post_analysis = process_published_posts()
+        print(f"✅ Database query processing: Analyzed {len(post_analysis)} published posts")
+        print(f"   Output type: {type(post_analysis).__name__}")
+        if post_analysis:
+            print(f"   Sample analysis: {post_analysis[0]}")
+        else:
+            print(f"   📝 Note: No published posts found - add some posts to test this feature")
     except Exception as e:
-        print(f"STATUS: FAILED")
-        print(f"  Error: {e}")
-
-    # --- Test 5: DataFrame to SQLModel Transformation ---
-    print("\n--- Test 5: DataFrame to List[SQLModel] Transformation ---")
+        print(f"❌ Error: {e}")
+        
+    # Example 5: Database Processing - Get user email domains
+    print("\n📧 Example 5: Extract Email Domains from Users")
     @pyjob(
-        input=sample_df,
-        output=User,
-        batch_size=2
+        db=postgres_db,
+        query="SELECT id, username, email, full_name FROM users WHERE is_active = true",
+        batch_size=20,
+        enable_monitoring=True
     )
-    def validate_dataframe_to_user(row):
-        """Converts a DataFrame row to a validated User object, skipping invalid rows."""
-        try:
-            return User(
-                first_name=row['first_name'].strip().title(),
-                last_name=row['last_name'].strip().title(),
-                email=row['email'].lower().strip(),
-                age=int(row['age'])
-            )
-        except (ValueError, KeyError):
-            return None # Skip rows that are invalid or missing data
-
+    def extract_user_domains(user_row):
+        """Extract email domains and user info."""
+        if '@' not in user_row['email']:
+            return None  # Skip invalid emails
+            
+        domain = user_row['email'].split('@')[1].lower()
+        return {
+            'user_id': user_row['id'],
+            'username': user_row['username'],
+            'email_domain': domain,
+            'domain_type': 'gmail' if 'gmail' in domain else 'corporate' if '.' in domain else 'other',
+            'has_full_name': bool(user_row['full_name'])
+        }
+    
     try:
-        validated_users = validate_dataframe_to_user()
-        print("STATUS: SUCCEEDED")
-        print(f"  Input: DataFrame (4 rows) -> Output: List[User] ({len(validated_users)} items)")
-        print(f"  Sample result: {validated_users[0].first_name} {validated_users[0].last_name}")
+        domain_analysis = extract_user_domains()
+        print(f"✅ Email domain extraction: Processed {len(domain_analysis)} active users")
+        print(f"   Output type: {type(domain_analysis).__name__}")
+        if domain_analysis:
+            print(f"   Sample: {domain_analysis[0]}")
+            # Show domain distribution
+            domain_counts = {}
+            for item in domain_analysis:
+                domain = item['email_domain']
+                domain_counts[domain] = domain_counts.get(domain, 0) + 1
+            print(f"   Domain distribution: {dict(list(domain_counts.items())[:5])}")  # Top 5
+        else:
+            print(f"   📝 Note: No active users found - add some users to test this feature")
     except Exception as e:
-        print(f"STATUS: FAILED")
-        print(f"  Error: {e}")
+        print(f"❌ Error: {e}")
 
-    # --- Final Statistics ---
-    print("\n" + "=" * 70)
-    print("Function Statistics Summary:")
+    # Show comprehensive stats
+    print(f"\n📈 Function Statistics:")
     functions = [
-        ('DataFrame->DataFrame', clean_dataframe_row),
-        ('SQLModel->SQLModel', clean_user_objects),
-        ('SQLModel->ProcessedUser', transform_to_processed_user),
-        ('Single SQLModel', analyze_single_user),
-        ('DataFrame->SQLModel', validate_dataframe_to_user),
+        ('Multiply Third Column', multiply_third_column_by_3),
+        ('DataFrame Processing', clean_dataframe_row),
+        ('DataFrame→Custom Objects', extract_summary_data),
+        ('Database Users Analysis', analyze_users_from_table),
+        ('Database Posts Query', process_published_posts),
+        ('Database Email Domains', extract_user_domains),
     ]
-
+    
     for name, func in functions:
-        try:
-            stats = func.get_stats()
-            print(f"  - {name}: {stats}")
-        except AttributeError:
-            print(f"  - {name}: Could not retrieve stats.")
+        stats = func.get_stats()
+        print(f"   {name}: {stats}")
+    
