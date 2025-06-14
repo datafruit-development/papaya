@@ -1,11 +1,9 @@
-import sys
 from pathlib import Path
 import typer
 import re
 import importlib.util
 from rich.console import Console
 from rich.prompt import Prompt, Confirm
-from datafruit import EXPORTED_DATABASES
 from datafruit.diff import print_diffs
 import json
 import hashlib
@@ -276,12 +274,12 @@ def plan():
     save_plan(diffs_by_db, schema_hash)
 
     if has_changes:
-        console.print(f"\n[bold green]✓ Plan saved to .dft/plan.json[/bold green]")
+        console.print("\n[bold green]✓ Plan saved to .dft/plan.json[/bold green]")
         console.print(f"[dim]Plan expires in {PLAN_EXPIRY_MINUTES} minutes.[/dim]")
         console.print("[dim]Run 'dft apply' to apply these changes.[/dim]")
     else:
         console.print("\n[bold yellow]No changes detected.[/bold yellow]")
-        console.print(f"[dim]Plan saved to .dft/plan.json (no changes needed)[/dim]")
+        console.print("[dim]Plan saved to .dft/plan.json (no changes needed)[/dim]")
 
 @app.command()
 def apply():
