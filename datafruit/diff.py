@@ -1,6 +1,6 @@
 from collections import defaultdict
 from rich.console import Console
-from sqlalchemy.schema import Column, Table, Index, Constraint
+from sqlalchemy.schema import Table
 from typing import Any, List, Tuple, Union
 
 console = Console()
@@ -136,7 +136,7 @@ def print_diff_item(diff: Tuple[Any, ...], index_map: dict, claimed_indexes: set
             console.print(f"[bold grey53]│[/bold grey53] [green]+ Add[/green] comment: [italic]{table.comment!r}[/italic]")
 
         case "remove_table_comment":
-            console.print(f"[bold grey53]│[/bold grey53] [red]- Remove[/red] comment")
+            console.print("[bold grey53]│[/bold grey53] [red]- Remove[/red] comment")
 
         case "execute":
             sql = diff[1]

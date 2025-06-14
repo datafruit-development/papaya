@@ -15,9 +15,22 @@ dependencies = [
     "typer>=0.16.0",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "config: Tests for configuration parsing and validation",
+    "diffing: Tests for state diffing (desired vs actual)",
+    "planning: Tests for plan generation and management", 
+    "apply: Tests for apply/sync operations",
+    "cli: Tests for CLI interface",
+    "connection: Tests for database connection validation",
+    "integration: Database integration tests", 
+    "slow: Slow running tests"
+]
+
 [project.optional-dependencies]
 test = [
     "pytest",
+    "pytest-mock>=3.14.1",
     "pytest-postgresql>=7.0.2",
     "psycopg[binary]",          # psycopg3 with binary package
     "pytest>=8.4.0",
