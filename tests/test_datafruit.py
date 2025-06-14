@@ -1,17 +1,16 @@
 import pytest
-import pytest_postgresql
 from datafruit.datafruit import PostgresDB
 from sqlmodel import SQLModel, Field
 from sqlalchemy import Engine, MetaData
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
 import tempfile
 import hashlib
 import sys
 import subprocess
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, mock_open
+from unittest.mock import Mock, patch
 import datafruit.cli as cli_module
 
 # =============================================================================
@@ -48,7 +47,7 @@ class TestComplexModel(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=100)
     score: float = Field(default=0.0)
-    tags: Optional[str] = None  
+    tags: Optional[str] = None
     is_verified: bool = Field(default=False)
     metadata_field: Optional[str] = Field(default=None)
 
@@ -89,7 +88,7 @@ def temp_dir():
 def mock_dft_dir(temp_dir):
     dft_path = temp_dir / '.dft'
     dft_path.mkdir(parents=True, exist_ok=True)
-    
+
     with patch.object(cli_module, 'DFT_DIR', dft_path):
         with patch.object(cli_module, 'PLAN_FILE', dft_path / 'plan.json'):
             yield dft_path
@@ -174,7 +173,7 @@ def test_get_local_metadata_empty_when_no_tables(empty_db_instance):
 @pytest.mark.config
 class TestSchemaConfigurationParsing:
     """Test parsing and validation of declarative schema configurations"""
-    
+
     def test_load_valid_schema_configuration(self, temp_dir, postgresql_db_conn_str):
         """Test loading a valid declarative schema file"""
         schema_content = f'''import datafruit as dft
@@ -192,7 +191,7 @@ dft.export([db])
 '''
         schema_file = temp_dir / "dft.py"
         schema_file.write_text(schema_content)
-        
+
         exported_dbs = cli_module.load_schema_from_file(schema_file)
         assert len(exported_dbs) == 1
         assert len(exported_dbs[0].tables) == 1
@@ -208,7 +207,7 @@ class TestUserInvalid(SQLModel, table=True)
 '''
         schema_file = temp_dir / "dft.py"
         schema_file.write_text(invalid_schema)
-        
+
         with pytest.raises(Exception):
             cli_module.load_schema_from_file(schema_file)
 
@@ -225,7 +224,7 @@ db = dft.PostgresDB("{postgresql_db_conn_str}", [TestUserNoExport])
 '''
         schema_file = temp_dir / "dft.py"
         schema_file.write_text(schema_content)
-        
+
         exported_dbs = cli_module.load_schema_from_file(schema_file)
         assert len(exported_dbs) == 1
 
@@ -233,15 +232,15 @@ db = dft.PostgresDB("{postgresql_db_conn_str}", [TestUserNoExport])
         """Test that schema file hashing works for change detection"""
         content1 = "# Schema version 1"
         content2 = "# Schema version 2"
-        
+
         schema_file = temp_dir / "schema.py"
-        
+
         schema_file.write_text(content1)
         hash1 = cli_module.get_schema_hash(schema_file)
-        
+
         schema_file.write_text(content2)
         hash2 = cli_module.get_schema_hash(schema_file)
-        
+
         assert hash1 != hash2
         assert isinstance(hash1, str)
         assert len(hash1) > 0
@@ -253,11 +252,11 @@ db = dft.PostgresDB("{postgresql_db_conn_str}", [TestUserNoExport])
 @pytest.mark.diffing
 class TestStateDiffing:
     """Test comparing desired state (config) vs actual state (database)"""
-    
+
     def test_diff_detects_new_tables(self, db_instance):
         """Test that diff correctly identifies tables that need to be created"""
         diffs = db_instance.get_schema_diff()
-        
+
         table_adds = [diff for diff in diffs if diff[0] == "add_table"]
         assert len(table_adds) == 3
 
@@ -265,14 +264,14 @@ class TestStateDiffing:
         """Test that no diff is generated when database matches config"""
         success = db_instance.sync_schema()
         assert success is True
-        
+
         diffs = db_instance.get_schema_diff()
         assert len(diffs) == 0
 
     def test_diff_with_empty_configuration(self, postgresql_db_conn_str):
         """Test diff when configuration declares no tables"""
         empty_db = PostgresDB(postgresql_db_conn_str, [])
-        
+
         diffs = empty_db.get_schema_diff()
         assert isinstance(diffs, list)
 
@@ -283,20 +282,20 @@ class TestStateDiffing:
 @pytest.mark.planning
 class TestPlanGeneration:
     """Test plan generation and management (like terraform plan)"""
-    
+
     def test_plan_serialization_and_deserialization(self, mock_dft_dir):
         """Test saving and loading plans"""
         diffs_by_db = [
             ("postgresql://test", [("add_table", Mock())])
         ]
         schema_hash = "test_hash"
-        
+
         with patch('datafruit.cli.serialize_diff') as mock_serialize:
             mock_serialize.return_value = {"type": "add_table", "table": "test"}
-            
+
             cli_module.save_plan(diffs_by_db, schema_hash)
             loaded_plan = cli_module.load_plan()
-            
+
             assert loaded_plan is not None
             assert loaded_plan["schema_hash"] == schema_hash
 
@@ -308,10 +307,10 @@ class TestPlanGeneration:
             "databases": [],
             "expiry_minutes": 10
         }
-        
+
         plan_file = mock_dft_dir / "plan.json"
         plan_file.write_text(json.dumps(expired_plan_data))
-        
+
         loaded_plan = cli_module.load_plan()
         assert loaded_plan is None
         assert not plan_file.exists()
@@ -321,13 +320,13 @@ class TestPlanGeneration:
         schema_file = temp_dir / "dft.py"
         schema_file.write_text("# Original content")
         original_hash = cli_module.get_schema_hash(schema_file)
-        
+
         diffs_by_db = []
         cli_module.save_plan(diffs_by_db, original_hash)
-        
+
         schema_file.write_text("# Modified content")
         new_hash = cli_module.get_schema_hash(schema_file)
-        
+
         assert original_hash != new_hash
 
     def test_diff_serialization(self):
@@ -335,10 +334,10 @@ class TestPlanGeneration:
         mock_table = Mock()
         mock_table.name = "test_table"
         mock_table.columns = []
-        
+
         add_table_diff = ("add_table", mock_table)
         serialized = cli_module.serialize_diff(add_table_diff)
-        
+
         assert serialized["type"] == "add_table"
         assert serialized["table_name"] == "test_table"
 
@@ -349,17 +348,17 @@ class TestPlanGeneration:
 @pytest.mark.apply
 class TestApplyOperations:
     """Test applying plans to reach desired state (like terraform apply)"""
-    
+
     def test_sync_creates_declared_tables(self, db_instance):
         """Test that sync creates all tables declared in config"""
         initial_tables = db_instance.get_table_info()
         table_names = [table[0] for table in initial_tables]
         assert "test_users" not in table_names
         assert "test_posts" not in table_names
-        
+
         success = db_instance.sync_schema()
         assert success is True
-        
+
         final_tables = db_instance.get_table_info()
         table_names = [table[0] for table in final_tables]
         assert "test_users" in table_names
@@ -369,17 +368,17 @@ class TestApplyOperations:
         """Test that running sync multiple times is safe (idempotent)"""
         success1 = db_instance.sync_schema()
         assert success1 is True
-        
+
         success2 = db_instance.sync_schema()
         assert success2 is True
-        
+
         diffs = db_instance.get_schema_diff()
         assert len(diffs) == 0
 
     def test_sync_handles_connection_failure(self):
         """Test graceful handling of connection failures during sync"""
         invalid_db = PostgresDB("postgresql+psycopg2://user:pass@nonexistent-host:5432/db", [TestUser])
-        
+
         success = invalid_db.sync_schema()
         assert success is False
 
@@ -390,17 +389,17 @@ class TestApplyOperations:
 @pytest.mark.cli
 class TestCLIInterface:
     """Test the declarative CLI commands (init, plan, apply)"""
-    
+
     def test_cli_init_creates_project_structure(self, temp_dir):
         """Test that 'dft init' creates proper project structure"""
         project_dir = temp_dir / "test_project"
-        
+
         success = cli_module.datafruit_default_init(str(project_dir))
         assert success is True
-        
+
         dft_file = project_dir / "dft.py"
         assert dft_file.exists()
-        
+
         content = dft_file.read_text()
         assert "import datafruit as dft" in content
         assert "SQLModel" in content
@@ -409,10 +408,10 @@ class TestCLIInterface:
         """Test project name validation rules"""
         valid_names = ["my-project", "project_123", "DataProject"]
         invalid_names = ["", "project with spaces", "project@special", None]
-        
+
         for name in valid_names:
             assert cli_module.is_valid_project_name(name) is True
-        
+
         for name in invalid_names:
             assert cli_module.is_valid_project_name(name) is False
 
@@ -421,7 +420,7 @@ class TestCLIInterface:
         plan_file = mock_dft_dir / "plan.json"
         plan_file.write_text('{"test": "data"}')
         assert plan_file.exists()
-        
+
         cli_module.clear_plan()
         assert not plan_file.exists()
 
@@ -429,29 +428,29 @@ class TestCLIInterface:
         schema_file = temp_dir / "test_schema.py"
         content = "test content for hashing"
         schema_file.write_text(content)
-        
+
         hash_result = cli_module.get_schema_hash(schema_file)
-        
+
         expected_hash = hashlib.sha256(content.encode()).hexdigest()
         assert hash_result == expected_hash
 
     def test_get_schema_hash_different_content(self, temp_dir):
         schema_file1 = temp_dir / "schema1.py"
         schema_file2 = temp_dir / "schema2.py"
-        
+
         schema_file1.write_text("content 1")
         schema_file2.write_text("content 2")
-        
+
         hash1 = cli_module.get_schema_hash(schema_file1)
         hash2 = cli_module.get_schema_hash(schema_file2)
-        
+
         assert hash1 != hash2
 
     def test_ensure_dft_dir_creates_directory(self, mock_dft_dir):
         assert mock_dft_dir.exists()
-        
+
         cli_module.ensure_dft_dir()
-        
+
         assert mock_dft_dir.exists()
         assert mock_dft_dir.is_dir()
 
@@ -463,10 +462,10 @@ class TestCLIInterface:
         mock_column2 = Mock()
         mock_column2.name = "col2"
         mock_table.columns = [mock_column1, mock_column2]
-        
+
         diff = ("add_table", mock_table)
         result = cli_module.serialize_diff(diff)
-        
+
         expected = {
             "type": "add_table",
             "table_name": "test_table",
@@ -478,10 +477,10 @@ class TestCLIInterface:
         mock_column = Mock()
         mock_column.name = "new_column"
         mock_column.type = "VARCHAR(50)"
-        
+
         diff = ("add_column", None, "test_table", mock_column)
         result = cli_module.serialize_diff(diff)
-        
+
         expected = {
             "type": "add_column",
             "table_name": "test_table",
@@ -493,7 +492,7 @@ class TestCLIInterface:
     def test_serialize_diff_unknown_type(self):
         diff = ("unknown_diff_type", "some", "random", "data")
         result = cli_module.serialize_diff(diff)
-        
+
         expected = {
             "type": "unknown_diff_type",
             "details": str(diff)
@@ -507,7 +506,7 @@ class TestCLIInterface:
 @pytest.mark.connection
 class TestConnectionValidation:
     """Test database connection validation for declared resources"""
-    
+
     def test_valid_connection_string(self, postgresql_db_conn_str):
         """Test validation of valid connection strings"""
         db = PostgresDB(postgresql_db_conn_str, [])
@@ -530,7 +529,7 @@ class TestConnectionValidation:
 @pytest.mark.integration
 class TestPostgresDBInit:
     """Test PostgresDB initialization edge cases"""
-    
+
     def test_init_creates_engine(self, postgresql_db_conn_str):
         db = PostgresDB(postgresql_db_conn_str, [TestUser])
         assert db.connection_string == postgresql_db_conn_str
@@ -555,7 +554,7 @@ class TestPostgresDBInit:
 @pytest.mark.integration
 class TestRealDatabaseConnections:
     """Test actual database connection scenarios"""
-    
+
     def test_successful_connection_and_query(self, db_instance):
         """Test that we can connect and execute a simple query"""
         result = db_instance.execute_sql("SELECT version()")
@@ -581,20 +580,20 @@ class TestRealDatabaseConnections:
         """Test multiple concurrent connections to the same database"""
         db1 = PostgresDB(postgresql_db_conn_str, [TestUser])
         db2 = PostgresDB(postgresql_db_conn_str, [TestPost])
-        
+
         assert db1.validate_connection() is True
         assert db2.validate_connection() is True
-        
+
         result1 = db1.execute_sql("SELECT 1 as test1")
         result2 = db2.execute_sql("SELECT 2 as test2")
-        
+
         assert result1.fetchone()[0] == 1
         assert result2.fetchone()[0] == 2
 
 @pytest.mark.integration
 class TestSQLExecutionIntegration:
     """Test SQL execution with real database"""
-    
+
     def test_execute_sql_successful(self, db_instance):
         result = db_instance.execute_sql("SELECT 1 as test_column")
         assert result is not None
@@ -619,12 +618,12 @@ def run_declarative_tests():
     """Run all tests relevant for declarative data engineering"""
     import subprocess
     import sys
-    
+
     cmd = [
         sys.executable, "-m", "pytest", __file__,
         "-v", "--tb=short"
     ]
-    
+
     result = subprocess.run(cmd)
     return result.returncode == 0
 
@@ -632,13 +631,13 @@ def run_original_tests():
     """Run only the original implementation tests"""
     import subprocess
     import sys
-    
+
     cmd = [
         sys.executable, "-m", "pytest", __file__,
         "-k", "not (config or diffing or planning or apply or cli or connection)",
         "-v"
     ]
-    
+
     result = subprocess.run(cmd)
     return result.returncode == 0
 
@@ -646,27 +645,27 @@ def run_core_declarative_tests():
     """Run only the most critical declarative tests"""
     import subprocess
     import sys
-    
+
     cmd = [
         sys.executable, "-m", "pytest", __file__,
         "-m", "config or diffing or planning",
         "-v"
     ]
-    
+
     result = subprocess.run(cmd)
     return result.returncode == 0
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="DataFruit Test Runner")
     parser.add_argument("category", nargs="?", default="all",
-                       choices=["config", "diffing", "planning", "apply", "cli", "connection", 
+                       choices=["config", "diffing", "planning", "apply", "cli", "connection",
                                "integration", "original", "declarative", "core", "all"],
                        help="Test category to run")
-    
+
     args = parser.parse_args()
-    
+
     if args.category == "original":
         success = run_original_tests()
     elif args.category == "declarative":
@@ -681,5 +680,5 @@ if __name__ == "__main__":
         cmd = [sys.executable, "-m", "pytest", __file__, "-m", args.category, "-v"]
         result = subprocess.run(cmd)
         success = result.returncode == 0
-    
+
     sys.exit(0 if success else 1)
