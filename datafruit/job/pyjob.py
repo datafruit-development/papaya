@@ -29,6 +29,7 @@ class _CircuitState(Enum):
 def pyjob(
     # Input/Output
     input_df: Optional[pd.DataFrame] = None,
+    output: Optional[Union[str, Type]] = None,  # "dataframe", "list", or table class for auto-save
     
     # Database Configuration (alternative to input_df)
     db: Optional[PostgresDB] = None,
@@ -59,10 +60,27 @@ def pyjob(
     in your transformation function. You write simple functions that process ONE row/record at a time, 
     and the decorator automatically applies it to ALL items in parallel.
     
-    Your function determines the output type - the decorator just parallelizes whatever you return.
+    Supports seamless conversion between DataFrame ↔ Database with output specification.
+    
+    Examples:
+        # DataFrame → process → convert to DataFrame
+        @pyjob(input_df=df, output="dataframe")
+        def clean_data(row):
+            return {'clean_name': row['name'].title()}
+        
+        # Database → process → auto-save to table
+        @pyjob(db=db, table_name="users", output=CleanUserTable)
+        def process_users(user_dict):
+            return CleanUserTable(name=user_dict['name'].title())
+        
+        # Default behavior (your function determines output)
+        @pyjob(input_df=df)
+        def process_row(row):
+            return whatever_you_want(row)
     
     Args:
         input_df: DataFrame to process
+        output: Output format - "dataframe", "list", or table class for auto-save to DB
         db: PostgresDB instance for database operations
         query: SQL query to fetch data from database
         table_name: Table name to fetch all records from (alternative to query)
@@ -138,9 +156,69 @@ def pyjob(
         optimal = max(50, data_size // (num_workers * 4))  # More granular batches
         return optimal
 
-    def _collect_results(results: List[Any]) -> List[Any]:
-        """Simply return the results as-is - let the user function determine output format."""
-        return [r for r in results if r is not None]  # Filter out None results
+    def _handle_output_conversion(results: List[Any], output_spec) -> Any:
+        """Handle output conversion and auto-saving based on output specification."""
+        if not results:
+            if output_spec == "dataframe":
+                return pd.DataFrame()
+            else:
+                return []
+        
+        # Default case - just return filtered results
+        if output_spec is None or output_spec == "list":
+            return results
+        
+        # Convert to DataFrame
+        if output_spec == "dataframe":
+            sample = results[0]
+            
+            if isinstance(sample, pd.Series):
+                # Convert Series back to DataFrame
+                return pd.DataFrame(results).reset_index(drop=True)
+            elif isinstance(sample, dict):
+                # Convert dicts to DataFrame
+                return pd.DataFrame(results)
+            elif isinstance(sample, pd.DataFrame):
+                # Concatenate DataFrames
+                return pd.concat(results, ignore_index=True)
+            else:
+                # Try to convert other types to DataFrame
+                try:
+                    return pd.DataFrame(results)
+                except Exception as e:
+                    logging.warning(f"Could not convert results to DataFrame: {e}. Returning as list.")
+                    return results
+        
+        # Auto-save to database table (if output is a table class)
+        if hasattr(output_spec, '__tablename__') and db is not None:
+            try:
+                from sqlmodel import Session
+                with Session(db.engine) as session:
+                    # Ensure all results are instances of the target table class
+                    table_objects = []
+                    for result in results:
+                        if isinstance(result, output_spec):
+                            table_objects.append(result)
+                        elif isinstance(result, dict):
+                            # Try to convert dict to table object
+                            table_objects.append(output_spec(**result))
+                        else:
+                            logging.warning(f"Cannot convert {type(result)} to {output_spec.__name__}")
+                    
+                    if table_objects:
+                        session.add_all(table_objects)
+                        session.commit()
+                        logging.info(f"Auto-saved {len(table_objects)} records to {output_spec.__tablename__} table")
+                        return table_objects
+                    else:
+                        logging.warning("No valid objects to save to database")
+                        return results
+            except Exception as e:
+                logging.error(f"Database auto-save failed: {e}")
+                return results
+        
+        # Return as-is for other cases
+        return results
         
     def _process_batch_with_ray(func: Callable, data: List[Any]) -> List[Any]:
         """Process a list of items in parallel batches using Ray."""
@@ -215,7 +293,7 @@ def pyjob(
         return final_results
 
     def _process_dataframe(func: Callable, df: pd.DataFrame) -> Any:
-        """Process DataFrame row by row and return results as-is."""
+        """Process DataFrame row by row and handle output conversion."""
         logging.info(f"Processing DataFrame with {len(df)} rows.")
         
         # Convert DataFrame to list of Series (rows)
@@ -224,10 +302,10 @@ def pyjob(
         # Process all rows
         processed_rows = _process_batch_with_ray(func, rows)
         
-        # Return results as-is
-        result = _collect_results(processed_rows)
+        # Handle output conversion
+        result = _handle_output_conversion(processed_rows, output)
         
-        logging.info(f"DataFrame processing complete: {len(df)} → {len(result)} items.")
+        logging.info(f"DataFrame processing complete: {len(df)} → {len(result) if hasattr(result, '__len__') else 1} items.")
         return result
 
     def _process_from_database(func: Callable, db, query=None, table_name=None) -> Any:
@@ -279,7 +357,7 @@ def pyjob(
 
             if not all_rows:
                 logging.warning("No records found matching criteria.")
-                return []
+                return _handle_output_conversion([], output)
 
             logging.info(f"Processing {len(all_rows)} records from database.")
             
@@ -290,12 +368,8 @@ def pyjob(
                 duration = time.time() - start_time
                 logging.info(f"Database processing completed in {duration:.2f}s.")
                 
-            return _collect_results(all_results)
-
-    # =================================================================================
-    # == DECORATOR WRAPPER
-    # =================================================================================
-
+            return _handle_output_conversion(all_results, output)
+        
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper():
@@ -347,6 +421,7 @@ def pyjob(
         })
         wrapper.get_stats = lambda: {
             'input_type': 'dataframe' if input_df is not None else 'database',
+            'output_format': str(output) if output else 'default',
             'table_name': table_name,
             'has_query': query is not None,
             'batch_size': batch_size,
@@ -358,7 +433,7 @@ def pyjob(
         return wrapper
     return decorator
         
-
+# this tests are ai generated so we gotta make it better
 if __name__ == "__main__":
     from datetime import datetime
     import os
@@ -639,4 +714,3 @@ if __name__ == "__main__":
     for name, func in functions:
         stats = func.get_stats()
         print(f"   {name}: {stats}")
-    
