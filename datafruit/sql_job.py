@@ -17,10 +17,12 @@ The decorator should take the SQLModel input, db, and an optional output table a
 def sql_job(db: PostgresDB, output_table: SQLModel | None = None, plan: bool = False):
     def decorator(func):
         def wrapper(*args, **kwargs):
-            sql_query = func(*args, **kwargs).strip()
+            sql_query = func(*args, **kwargs)
 
             if not isinstance(sql_query, str):
                 raise ValueError("The function must return a valid SQL query string.")
+
+            sql_query = sql_query.strip()
 
             def replace_ref(match):
                 model_name = match.group(1)
@@ -86,14 +88,15 @@ if __name__ == "__main__":
         import random
 
         dummy_users_data = [
-            {"username": "john_doe", "email": "john.doe@example.com", "full_name": "John Doe", "is_active": True},
-            {"username": "jane_smith", "email": "jane.smith@example.com", "full_name": "Jane Smith", "is_active": True},
-            {"username": "bob_wilson", "email": "bob.wilson@example.com", "full_name": "Bob Wilson", "is_active": False},
-            {"username": "alice_brown", "email": "alice.brown@example.com", "full_name": "Alice Brown", "is_active": True},
-            {"username": "charlie_davis", "email": "charlie.davis@example.com", "full_name": "Charlie Davis", "is_active": True},
-            {"username": "diana_miller", "email": "diana.miller@example.com", "full_name": "Diana Miller", "is_active": False},
-            {"username": "testuser1", "email": "test1@test.com", "full_name": None, "is_active": True},
-            {"username": "testuser2", "email": "test2@test.com", "full_name": None, "is_active": True},
+            # {"username": "john_doe", "email": "john.doe@example.com", "full_name": "John Doe", "is_active": True},
+            # {"username": "jane_smith", "email": "jane.smith@example.com", "full_name": "Jane Smith", "is_active": True},
+            # {"username": "bob_wilson", "email": "bob.wilson@example.com", "full_name": "Bob Wilson", "is_active": False},
+            # {"username": "alice_brown", "email": "alice.brown@example.com", "full_name": "Alice Brown", "is_active": True},
+            # {"username": "charlie_davis", "email": "charlie.davis@example.com", "full_name": "Charlie Davis", "is_active": True},
+            # {"username": "diana_miller", "email": "diana.miller@example.com", "full_name": "Diana Miller", "is_active": False},
+            # {"username": "testuser1", "email": "test1@test.com", "full_name": None, "is_active": True},
+            # {"username": "testuser2", "email": "test2@test.com", "full_name": None, "is_active": True},
+            # {"username": "testuser3", "email": "test3@test.com", "full_name": None, "is_active": True},
         ]
 
         # Add random created_at dates
@@ -116,8 +119,8 @@ if __name__ == "__main__":
                 trans.rollback()
                 print(f"Error inserting users: {e}")
 
-    # insert_dummy_users_sqlmodel()
-    # print("Dummy users inserted successfully.")
+    insert_dummy_users_sqlmodel()
+    print("Dummy users inserted successfully.")
 
     @sql_job(db)
     def count_rows():
