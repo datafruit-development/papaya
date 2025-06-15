@@ -25,10 +25,10 @@ def process_user_events(events_data):
     return df  # ⚠️ Entire DataFrame held in memory until insertion
 ```
 
-Insert data into the table in a streamed way by defining a function which yields a dataframe
+You could also insert data into the table in a more memory-efficient way by defining a generator which yields a dataframe
 
 ```python
-@dft.py_job(output_table=User, streaming=True)
+@dft.py_job(output_table=User)
 def process_user_events(events_data):
     """Processes and yields chunks"""
     for chunk in pd.read_csv(events_data, chunksize=1000):
@@ -36,7 +36,7 @@ def process_user_events(events_data):
         chunk['email'] = chunk['email'].str.lower()
         chunk = chunk[chunk['email'].str.contains('@')]
         
-        yield chunk  # ✅ Immediate insertion, chunk gets garbage collected
+        yield chunk 
 ```
 
 somewhere in the code you would need to export the data to the CLI
@@ -45,7 +45,7 @@ somewhere in the code you would need to export the data to the CLI
 # not ran until the job is called
 USER_DATA = load_massive_dataset()...
 
-export([db], USER_DATA)
+export(USER_DATA)
 ```
 
 Then you would run
@@ -58,11 +58,11 @@ dft run process_user_events USER_DATA
 
 ### output_table
 
-The output schema the job will conform to. 
+The output schema the job will conform to.
 
 ### streaming
 
-Default `False`. Whether or not the function will work on the entire data or return it as a generator. 
+Default `False`. Whether or not the function will work on the entire data or return it as a generator.
 
 ## Benefits of using Python / parallalized jobs
 
@@ -190,7 +190,7 @@ Sample processed records:
 
 ### output_table
 
-The output schema the job will conform to. 
+The output schema the job will conform to.
 
 ### workers
 
