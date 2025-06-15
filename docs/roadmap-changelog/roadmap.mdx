@@ -21,7 +21,7 @@ Stay up to date with our latest developments and upcoming features. This roadmap
 <Update label="Planned" description="On our near-term roadmap">
   ## Planned Features
 
-  <Steps>                                       
+  <Steps>
     <Step title="Lineage Tracking">
       Track data dependencies and lineage for better data governance and auditability.
     </Step>
@@ -30,8 +30,8 @@ Stay up to date with our latest developments and upcoming features. This roadmap
     </Step>
     <Step title="Automatic Impact Analysis">
       Automatically detect and report how schema changes affect jobs and dependencies.
-      
-      ```python wrap
+
+      ```python
       # Required imports at the top of your dft.py
       from sqlmodel import SQLModel, Field
       from typing import Optional
@@ -44,10 +44,10 @@ Stay up to date with our latest developments and upcoming features. This roadmap
           full_name: Optional[str] = None
           created_at: datetime = Field(default_factory=datetime.utcnow)
       ```
-      
+
       Running `dft plan` or `dft run` shows the impact and prevents broken jobs:
-      
-      ```bash wrap
+
+      ```bash
       Datafruit will perform the following actions:
       
       ~ Table: user
@@ -69,8 +69,8 @@ Stay up to date with our latest developments and upcoming features. This roadmap
     </Step>
     <Step title="Incremental Execution">
       Process only new or changed data since the last run for efficient updates.
-      
-      ```python wrap
+
+      ```python
       # The incremental_key specifies which column to use for tracking new records
       # Datafruit will automatically track the maximum value between runs
       @dft.sql_job(db, incremental=True, incremental_key="created_at")
@@ -88,16 +88,17 @@ Stay up to date with our latest developments and upcoming features. This roadmap
               GROUP BY DATE(u.created_at)
           """
       ```
-      
+
       When executed, datafruit automatically:
+
       1. Looks up last successful run timestamp
       2. Substitutes `{last_run_timestamp}` in the SQL
       3. Only processes new data since last run
     </Step>
     <Step title="Advanced Job Scheduling">
       Support for scheduled jobs, retries, and event-based triggers.
-      
-      ```python wrap
+
+      ```python
       # Schedule a job to run daily with automatic retries
       # Will be executed once per day, with up to 3 retries on failure
       @dft.sql_job(db, schedule="daily", retry=3)
@@ -130,7 +131,7 @@ Stay up to date with our latest developments and upcoming features. This roadmap
     </Step>
     <Step title="Parameterized Jobs">
       Create reusable job templates with runtime parameters.
-      
+
       ```python wrap
       # Define a job with default parameters
       # These can be overridden at runtime via command line
@@ -145,15 +146,16 @@ Stay up to date with our latest developments and upcoming features. This roadmap
               AND score > {min_score}
           """
       ```
-      
+
       Override parameters at runtime:
+
       ```bash
       dft run parameterized_job --lookback_days=7
       ```
     </Step>
     <Step title="Job Ignore Flag">
       Mark jobs as ignored to temporarily exclude them from execution.
-      
+
       ```python wrap
       # The @ignore decorator tells Datafruit to skip this job during normal execution
       # Useful for one-time backfills or deprecated jobs that you want to keep for reference
@@ -173,8 +175,75 @@ Stay up to date with our latest developments and upcoming features. This roadmap
           """
       ```
     </Step>
-    <Step title="Automatic Backfill Planning">
-      Compute which downstream views/jobs require recomputation.
+    <Step title="Running Python Jobs">
+      (Useful for EL/ETL)\
+      \
+      Insert data into to table by defining a function which returns a dataframe
+
+      ```python
+      @dft.py_job(output_table=User)
+      def process_user_events(events_data):
+          """Loads ALL data into memory at once"""
+          df = pd.DataFrame(events_data)  # Could be huge!
+          
+          # Process entire dataset in memory
+          df['email'] = df['email'].str.lower()
+          df = df[df['email'].str.contains('@')]
+          
+          return df  # ⚠️ Entire DataFrame held in memory until insertion
+      ```
+
+      Insert data into the table in a streamed way by defining a function which yields a dataframe
+
+      ```python
+      @dft.py_job(output_table=User, streaming=True)
+      def process_user_events(events_data):
+          """Processes and yields chunks"""
+          for chunk in pd.read_csv(events_data, chunksize=1000):
+              # Process small chunk
+              chunk['email'] = chunk['email'].str.lower()
+              chunk = chunk[chunk['email'].str.contains('@')]
+              
+              yield chunk  # ✅ Immediate insertion, chunk gets garbage collected
+      ```
+
+      Insert data into the table in a parallelized way by defining a function which executes row by row on some input data
+
+      ```python
+      @dft.parallelized_job(output_table=UserScore, workers=4)
+      def process_user_events(user_data: dict) -> UserScore:
+          """Input data must be a list which can be chunked, each entry in list should correspond to a row in the table."""
+          user_id = user_data['id']
+          score = complex_ml_model.predict(user_data['features'])
+          category = categorize_user(score)
+          
+      	# Return Pydantic model instance (guaranteed single row)
+         # The decorator will:
+         # 1. Distribute user_data items across 4 workers
+         # 2. Call this function on each item in parallel  
+         # 3. Collect all UserScore objects
+         # 4. Convert to DataFrame and insert into UserScoreTable
+          return UserScore(
+              user_id=user_id,
+              score=score,
+              category=category
+          )
+      ```
+
+      to get the data accessible to run, somewhere in the config you would add `USER_DATA` to the exports
+
+      ```python
+      # not ran until the job is called
+      USER_DATA = load_massive_dataset()...
+      
+      export([db], USER_DATA)
+      ```
+
+      Then you would run
+
+      ```bash
+      dft run process_user_events USER_DATA
+      ```
     </Step>
     <Step title="Interactive Visualization">
       Display dependencies and execution flow in a graph view for navigation and debugging.
@@ -187,6 +256,9 @@ Stay up to date with our latest developments and upcoming features. This roadmap
     </Step>
     <Step title="Iceberg/Parquet Support">
       Support for Iceberg and Parquet formats.
+    </Step>
+    <Step title="Automatic Backfill Planning">
+      Compute which downstream views/jobs require recomputation
     </Step>
   </Steps>
 </Update>
