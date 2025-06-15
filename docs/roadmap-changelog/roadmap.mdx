@@ -193,10 +193,10 @@ Stay up to date with our latest developments and upcoming features. This roadmap
           return df  # ⚠️ Entire DataFrame held in memory until insertion
       ```
 
-      Insert data into the table in a streamed way by defining a function which yields a dataframe
+      You could also insert data into the table in a more memory-efficient way by defining a generator which yields a dataframe.
 
       ```python
-      @dft.py_job(output_table=User, streaming=True)
+      @dft.py_job(output_table=User)
       def process_user_events(events_data):
           """Processes and yields chunks"""
           for chunk in pd.read_csv(events_data, chunksize=1000):
@@ -204,7 +204,7 @@ Stay up to date with our latest developments and upcoming features. This roadmap
               chunk['email'] = chunk['email'].str.lower()
               chunk = chunk[chunk['email'].str.contains('@')]
               
-              yield chunk  # ✅ Immediate insertion, chunk gets garbage collected
+              yield chunk
       ```
 
       Insert data into the table in a parallelized way by defining a function which executes row by row on some input data
