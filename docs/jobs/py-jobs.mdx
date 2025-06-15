@@ -6,6 +6,99 @@ icon: "python"
 
 While `@sql_job` is great for SQL-based transformations, some logic is too complex or better expressed in Python. The `@py_job` and `@parallelized_job` decorators are designed for these scenarios.
 
+## Python Jobs
+
+**(Useful for EL/ETL)**
+
+Insert data into to table by defining a function which returns a dataframe
+
+```python
+@dft.py_job(output_table=User)
+def process_user_events(events_data):
+    """Loads ALL data into memory at once"""
+    df = pd.DataFrame(events_data)  # Could be huge!
+    
+    # Process entire dataset in memory
+    df['email'] = df['email'].str.lower()
+    df = df[df['email'].str.contains('@')]
+    
+    return df  # ⚠️ Entire DataFrame held in memory until insertion
+```
+
+Insert data into the table in a streamed way by defining a function which yields a dataframe
+
+```python
+@dft.py_job(output_table=User, streaming=True)
+def process_user_events(events_data):
+    """Processes and yields chunks"""
+    for chunk in pd.read_csv(events_data, chunksize=1000):
+        # Process small chunk
+        chunk['email'] = chunk['email'].str.lower()
+        chunk = chunk[chunk['email'].str.contains('@')]
+        
+        yield chunk  # ✅ Immediate insertion, chunk gets garbage collected
+```
+
+somewhere in the code you would need to export the data to the CLI
+
+```python
+# not ran until the job is called
+USER_DATA = load_massive_dataset()...
+
+export([db], USER_DATA)
+```
+
+Then you would run
+
+```bash
+dft run process_user_events USER_DATA
+```
+
+## Key parameters:
+
+### output_table
+
+The output schema the job will conform to. 
+
+### streaming
+
+Default `False`. Whether or not the function will work on the entire data or return it as a generator. 
+
+## Benefits of using Python / parallalized jobs
+
+1. **Schema Validation**: When you run `dft plan`, Datafruit checks if all referenced tables and columns exist in the current schema.
+2. **Runtime Validation**: If your job reads from or writes to database tables, Datafruit validates the schema at runtime before processing begins.
+3. **Error Handling**: If your job tries to access a missing column or table, it will fail with a clear error message indicating what's missing.
+4. **Updating Jobs**: To update your job after schema changes:
+   - Modify your function to work with the new schema
+   - Update any SQL queries if using `table_name` or `query` parameters
+   - If using a SQLModel for output, ensure it matches the new schema
+   - Test with `dft plan` before applying changes
+
+```
+❌ Job execution failed: process_users
+
+🔍 Schema Validation Error:
+The job 'process_users' references columns that no longer exist in the schema:
+
+Missing columns:
+├─ user.email (referenced in job code)
+└─ user.full_name (referenced in job code)
+
+📋 Job code analysis:
+   Line 3: df['email_domain'] = df['email'].str.split('@').str[1]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           ❌ Column 'email' not found in User table schema
+
+   Line 4: df['display_name'] = df['full_name'].fillna(df['username'])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           ❌ Column 'full_name' not found in User table schema
+
+⚠️  Job not executed - fix schema conflicts first
+```
+
+Always test your schema changes in a development environment before applying them to production.
+
 ## Parallelized jobs
 
 You write a simple Python function that processes a **single row or record**, and `@parallelized_job` handles the parallel execution across your entire dataset using [Ray](https://www.ray.io/).
@@ -102,94 +195,3 @@ The output schema the job will conform to.
 ### workers
 
 the number of workers that the job will be executed on
-
-## Python Jobs
-
-**(Useful for EL/ETL)**
-
-Insert data into to table by defining a function which returns a dataframe
-
-```python
-@dft.py_job(output_table=User)
-def process_user_events(events_data):
-    """Loads ALL data into memory at once"""
-    df = pd.DataFrame(events_data)  # Could be huge!
-    
-    # Process entire dataset in memory
-    df['email'] = df['email'].str.lower()
-    df = df[df['email'].str.contains('@')]
-    
-    return df  # ⚠️ Entire DataFrame held in memory until insertion
-```
-
-Insert data into the table in a streamed way by defining a function which yields a dataframe
-
-```python
-@dft.py_job(output_table=User, streaming=True)
-def process_user_events(events_data):
-    """Processes and yields chunks"""
-    for chunk in pd.read_csv(events_data, chunksize=1000):
-        # Process small chunk
-        chunk['email'] = chunk['email'].str.lower()
-        chunk = chunk[chunk['email'].str.contains('@')]
-        
-        yield chunk  # ✅ Immediate insertion, chunk gets garbage collected
-```
-
-```python
-# not ran until the job is called
-USER_DATA = load_massive_dataset()...
-
-export([db], USER_DATA)
-```
-
-Then you would run
-
-```bash
-dft run process_user_events USER_DATA
-```
-
-## Key parameters:
-
-### output_table
-
-The output schema the job will conform to. 
-
-### streaming
-
-Default `False`. Whether or not the function will work on the entire data or return it as a generator. 
-
-## Benefits of using Python / parallalized jobs
-
-1. **Schema Validation**: When you run `dft plan`, Datafruit checks if all referenced tables and columns exist in the current schema.
-2. **Runtime Validation**: If your job reads from or writes to database tables, Datafruit validates the schema at runtime before processing begins.
-3. **Error Handling**: If your job tries to access a missing column or table, it will fail with a clear error message indicating what's missing.
-4. **Updating Jobs**: To update your job after schema changes:
-   - Modify your function to work with the new schema
-   - Update any SQL queries if using `table_name` or `query` parameters
-   - If using a SQLModel for output, ensure it matches the new schema
-   - Test with `dft plan` before applying changes
-
-```
-❌ Job execution failed: process_users
-
-🔍 Schema Validation Error:
-The job 'process_users' references columns that no longer exist in the schema:
-
-Missing columns:
-├─ user.email (referenced in job code)
-└─ user.full_name (referenced in job code)
-
-📋 Job code analysis:
-   Line 3: df['email_domain'] = df['email'].str.split('@').str[1]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-           ❌ Column 'email' not found in User table schema
-
-   Line 4: df['display_name'] = df['full_name'].fillna(df['username'])
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-           ❌ Column 'full_name' not found in User table schema
-
-⚠️  Job not executed - fix schema conflicts first
-```
-
-Always test your schema changes in a development environment before applying them to production.
