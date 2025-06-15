@@ -139,3 +139,41 @@ The number of CPUs to allocate for each parallel task in Ray.
 ### batch_size
 
 The number of rows to process in each parallel batch. If not set, an optimal size is calculated automatically.
+
+## Handling Schema Changes
+
+When your schema changes in a way that affects your Python jobs (e.g., renaming or removing columns/tables used in your job), here's what happens:
+
+1. **Schema Validation**: When you run `dft plan`, Datafruit checks if all referenced tables and columns exist in the current schema.
+
+2. **Runtime Validation**: If your job reads from or writes to database tables, Datafruit validates the schema at runtime before processing begins.
+
+3. **Error Handling**: If your job tries to access a missing column or table, it will fail with a clear error message indicating what's missing.
+
+4. **Updating Jobs**: To update your job after schema changes:
+   - Modify your function to work with the new schema
+   - Update any SQL queries if using `table_name` or `query` parameters
+   - If using a SQLModel for output, ensure it matches the new schema
+   - Test with `dft plan` before applying changes
+
+Example of updating a job after schema changes:
+
+```python
+# Old code (before schema change)
+@pyjob(db=db, table_name="users")
+def process_user(user_dict):
+    return {
+        'username': user_dict['username'],
+        'email': user_dict['email'].lower()
+    }
+
+# Updated code (after renaming 'email' to 'email_address')
+@pyjob(db=db, table_name="users")
+def process_user(user_dict):
+    return {
+        'username': user_dict['username'],
+        'email': user_dict['email_address'].lower()  # Updated field name
+    }
+```
+
+Always test your schema changes in a development environment before applying them to production.

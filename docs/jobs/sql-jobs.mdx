@@ -95,6 +95,31 @@ The PostgresDB instance to run the query against.
 
 The SQLModel class representing the destination table. If provided, results are inserted into this table. If None, results are returned as a DataFrame.
 
-### plan
 
-coming soon
+
+## Handling Schema Changes
+
+When you modify your schema in a way that affects the requirements of your SQL job (e.g., renaming or removing columns/tables used in your queries), you'll need to update your job accordingly. Here's what happens:
+
+1. **Schema Changes Detected**: When you run `dft plan`, Datafruit will detect any schema changes that might affect your jobs.
+
+2. **Job Validation**: Before executing `dft run`, Datafruit will validate that all tables and columns referenced in your SQL queries exist in the current schema.
+
+3. **Error Handling**: If a job references a column or table that no longer exists, the job will fail with a clear error message indicating what's missing.
+
+4. **Updating Jobs**: To fix the job:
+   - Update your SQL query to reference the correct tables/columns
+   - Run `dft plan` to verify the changes
+   - Run `dft apply` to update the schema
+   - Run your job with `dft run job_name`
+
+Example of a breaking change:
+```python
+# Old query (before schema change)
+"""SELECT username, email FROM {{ ref('users') }}"""
+
+# New query (after renaming 'email' to 'email_address')
+"""SELECT username, email_address as email FROM {{ ref('users') }}"""
+```
+
+Always test your schema changes in a development environment before applying them to production.
