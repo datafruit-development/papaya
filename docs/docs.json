@@ -18,14 +18,10 @@
             "pages": ["index", "quickstart"]
           },
           {
-            "group": "Essentials",
+            "group": "Jobs",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/settings",
-              "essentials/navigation",
-              "essentials/reusable-snippets"
+              "jobs/sql-jobs",
+              "jobs/py-jobs"
             ]
           },
           {

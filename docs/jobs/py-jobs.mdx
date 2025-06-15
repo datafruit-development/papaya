@@ -1,0 +1,141 @@
+---
+title: "Python Jobs"
+description: "Use the @pyjob decorator for complex, row-level transformations in Python, with built-in parallelization."
+icon: "python"
+---
+
+While `@sql_job` is great for SQL-based transformations, some logic is too complex or better expressed in Python. The `@pyjob` decorator is designed for these scenarios.
+
+You write a simple Python function that processes a **single row or record**, and `@pyjob` handles the parallel execution across your entire dataset using [Ray](https://www.ray.io/).
+
+## Key Concepts
+
+- **Row-Level Logic:** You define the logic for one item, and Datafruit applies it to all.
+- **Parallel Execution:** Jobs run in parallel automatically, speeding up large transformations.
+- **Flexible I/O:** Read from and write to DataFrames or database tables seamlessly.
+
+## Processing a DataFrame
+
+The most straightforward way to use `@pyjob` is to process a Pandas DataFrame.
+
+```python
+import pandas as pd
+from datafruit import pyjob
+
+# Sample input data
+user_df = pd.DataFrame({
+    'name': ['jane doe', 'john smith'],
+    'email': ['JANE@EXAMPLE.COM', 'john@example.com']
+})
+
+@pyjob(input_df=user_df, output="dataframe")
+def clean_user_data(row):
+    """
+    Takes a single row (as a Pandas Series), cleans it,
+    and returns a new dictionary representing the clean row.
+    """
+    return {
+        'name': row['name'].title(),
+        'email': row['email'].lower()
+    }
+
+# Execute the job
+cleaned_df = clean_user_data()
+print(cleaned_df)
+
+# Output:
+#          name             email
+# 0    Jane Doe  jane@example.com
+# 1  John Smith  john@example.com
+```
+
+## Reading from the Database
+You can also use a database table as the input for your job. Datafruit will efficiently stream records from the database to your transformation function.
+
+The decorated function will receive each row as a dictionary.
+
+```python
+# Assuming 'db' is a configured PostgresDB instance
+# and the 'users' model is defined and exported.
+
+@pyjob(db=db, table_name="users")
+def analyze_user_domains(user_dict):
+    """
+    Takes a user record (as a dict) and extracts the email domain.
+    Returns None for users without an email to filter them out.
+    """
+    email = user_dict.get('email')
+    if not email or '@' not in email:
+        return None # This record will be filtered out
+
+    return {
+        'username': user_dict['username'],
+        'email_domain': email.split('@')[1]
+    }
+
+```
+You can also provide a raw query instead of a table_name for more specific data fetching.
+
+
+## Writing to the Database
+Just like '@sql_job', you can materialize the results of a '@pyjob' directly to a database table by specifying a SQLModel class as the output.
+
+Your function should return either dictionaries or instances of your output model.
+
+```python
+# Assuming 'db' is configured with both 'users' and 'UserDomain' models.
+from sqlmodel import SQLModel, Field
+
+# Define the output table model
+class UserDomain(SQLModel, table=True):
+    username: str = Field(primary_key=True)
+    email_domain: str
+
+# Define and execute the job
+@pyjob(db=db, table_name="users", output=UserDomain)
+def etl_user_domains(user_dict):
+    email = user_dict.get('email')
+    if not email or '@' not in email:
+        return None
+
+    # Return a dictionary matching the UserDomain model
+    return {
+        'username': user_dict['username'],
+        'email_domain': email.split('@')[1]
+    }
+
+```
+
+## Key Parameters
+
+### input_df
+
+A Pandas DataFrame to be used as the input for the job. Each row will be processed in parallel.
+
+### output
+
+Specifies the output format.
+
+None or &quot;list&quot; (default): Returns a list of the results from your function.
+&quot;dataframe&quot;: Collects results into a new Pandas DataFrame.
+SQLModel Class: Automatically saves the results to the corresponding database table. Requires db to be configured.
+
+### db
+
+The PostgresDB instance for database operations (both input and output).
+
+### query
+
+A SQL query to fetch input data from the database. Each resulting row is passed to the function as a dictionary. Requires db.
+
+### table_name
+
+The name of a database table to use as input. An alternative to query. Requires db.
+
+### num_cpus
+
+The number of CPUs to allocate for each parallel task in Ray.
+
+### batch_size
+
+The number of rows to process in each parallel batch. If not set, an optimal size is calculated automatically.
