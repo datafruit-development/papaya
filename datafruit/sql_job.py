@@ -50,6 +50,7 @@ def sql_job(db: PostgresDB, output_table: SQLModel | None = None, plan: bool = F
                             print("Created table:", output_table.__tablename__)
 
                         # Direct database-to-database operation
+                        # This doesn't really work properly - we should move to views and remove this
                         insert_query = f"INSERT INTO {output_table.__tablename__} ({sql_query})"
 
                         result = conn.execute(text(insert_query))
