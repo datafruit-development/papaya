@@ -1,21 +1,21 @@
 import ray
 import random
-import time 
-import math 
+import time
+import math
 import psutil
 import pandas as pd
 import logging
 from typing import Optional, Union, Type, Dict, Callable, Any, List
-from enum import Enum 
+from enum import Enum
 from datafruit import PostgresDB
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
-from functools import wraps 
+from functools import wraps
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-if not ray.is_initialized(): 
+if not ray.is_initialized():
     ray.init()
 
 # circuit breaker enum that ensure no time waste during parallel processes
@@ -24,60 +24,60 @@ class _CircuitState(Enum):
     CLOSED="CLOSED"
     OPEN="OPEN"
     HALF_OPEN="HALF_OPEN"
- 
 
-def pyjob(
+
+def parallelized_job(
     # Input/Output
     input_df: Optional[pd.DataFrame] = None,
     output: Optional[Union[str, Type]] = None,  # "dataframe", "list", or table class for auto-save
-    
+
     # Database Configuration (alternative to input_df)
     db: Optional[PostgresDB] = None,
     query: Optional[str] = None,
     table_name: Optional[str] = None,
-    
+
     # Processing config for ray
     batch_size: Optional[int] = None,
     num_cpus: int = 1,
     memory: Optional[int] = None,
-    
+
     # error handling (optional, probably should update for more robust handling)
     max_retries: int = 3,
     retry_exceptions: Optional[List[Exception]] = None,
     enable_circuit_breaker: bool = True,
     circuit_failure_threshold: int = 5,
     circuit_timeout: int = 60,
-    
-    # added for future monitoring implementation 
+
+    # added for future monitoring implementation
     enable_monitoring: bool = True,
     auto_gc: bool = True,
     memory_threshold: float = 0.8
-): 
+):
     """
     A flexible decorator for parallel data transformations using Ray with DataFrame and Database support.
-    
-    This decorator handles all the parallelization complexity while giving you complete flexibility 
-    in your transformation function. You write simple functions that process ONE row/record at a time, 
+
+    This decorator handles all the parallelization complexity while giving you complete flexibility
+    in your transformation function. You write simple functions that process ONE row/record at a time,
     and the decorator automatically applies it to ALL items in parallel.
-    
+
     Supports seamless conversion between DataFrame ↔ Database with output specification.
-    
+
     Examples:
         # DataFrame → process → convert to DataFrame
-        @pyjob(input_df=df, output="dataframe")
+        @parallelized_job(input_df=df, output="dataframe")
         def clean_data(row):
             return {'clean_name': row['name'].title()}
-        
+
         # Database → process → auto-save to table
-        @pyjob(db=db, table_name="users", output=CleanUserTable)
+        @parallelized_job(db=db, table_name="users", output=CleanUserTable)
         def process_users(user_dict):
             return CleanUserTable(name=user_dict['name'].title())
-        
+
         # Default behavior (your function determines output)
-        @pyjob(input_df=df)
+        @parallelized_job(input_df=df)
         def process_row(row):
             return whatever_you_want(row)
-    
+
     Args:
         input_df: DataFrame to process
         output: Output format - "dataframe", "list", or table class for auto-save to DB
@@ -95,18 +95,18 @@ def pyjob(
         enable_monitoring: Enable memory and performance monitoring
         auto_gc: Automatically trigger garbage collection
         memory_threshold: Memory threshold for triggering GC
-    """ 
+    """
     circuit_breaker_state = {
-        'state': _CircuitState.CLOSED,  
-        'failure_count': 0, 
+        'state': _CircuitState.CLOSED,
+        'failure_count': 0,
         'last_failure_time': None
     }
-    
+
     def _update_circuit_breaker(success: bool):
         """Updates the circuit breaker state based on task success/failure."""
         if not enable_circuit_breaker:
             return
-        
+
         if success:
             if circuit_breaker_state['state'] == _CircuitState.HALF_OPEN:
                 circuit_breaker_state['state'] = _CircuitState.CLOSED
@@ -131,26 +131,26 @@ def pyjob(
                 logging.info("Circuit breaker HALF_OPEN - allowing test request.")
                 return True
             return False
-        
-        return True  
+
+        return True
 
     def _monitor_memory():
         """Monitors memory usage and triggers garbage collection if needed."""
         if not enable_monitoring:
             return 0
-        
+
         memory_percent = psutil.virtual_memory().percent
         if memory_percent > memory_threshold * 100 and auto_gc:
             import gc
             gc.collect()
             logging.warning(f"Memory usage ({memory_percent:.1f}%) exceeded threshold. Triggered GC.")
         return memory_percent
-    
+
     def _get_optimal_batch_size(data_size: int) -> int:
         """Calculate optimal batch size based on data size and available resources."""
         if batch_size is not None:
             return batch_size
-        
+
         # Adaptive batching based on available CPU cores
         num_workers = int(ray.available_resources().get("CPU", 4))
         optimal = max(50, data_size // (num_workers * 4))  # More granular batches
@@ -163,15 +163,15 @@ def pyjob(
                 return pd.DataFrame()
             else:
                 return []
-        
+
         # Default case - just return filtered results
         if output_spec is None or output_spec == "list":
             return results
-        
+
         # Convert to DataFrame
         if output_spec == "dataframe":
             sample = results[0]
-            
+
             if isinstance(sample, pd.Series):
                 # Convert Series back to DataFrame
                 return pd.DataFrame(results).reset_index(drop=True)
@@ -188,7 +188,7 @@ def pyjob(
                 except Exception as e:
                     logging.warning(f"Could not convert results to DataFrame: {e}. Returning as list.")
                     return results
-        
+
         # Auto-save to database table (if output is a table class)
         if hasattr(output_spec, '__tablename__') and db is not None:
             try:
@@ -204,7 +204,7 @@ def pyjob(
                             table_objects.append(output_spec(**result))
                         else:
                             logging.warning(f"Cannot convert {type(result)} to {output_spec.__name__}")
-                    
+
                     if table_objects:
                         session.add_all(table_objects)
                         session.commit()
@@ -216,15 +216,15 @@ def pyjob(
             except Exception as e:
                 logging.error(f"Database auto-save failed: {e}")
                 return results
-        
+
         # Return as-is for other cases
         return results
-        
+
     def _process_batch_with_ray(func: Callable, data: List[Any]) -> List[Any]:
         """Process a list of items in parallel batches using Ray."""
         start_time = time.time()
         initial_mem = _monitor_memory()
-        
+
         data_size = len(data)
         optimal_batch_size = _get_optimal_batch_size(data_size)
 
@@ -250,8 +250,8 @@ def pyjob(
 
         # Create Ray remote function that processes one batch
         @ray.remote(
-            num_cpus=num_cpus, 
-            memory=memory, 
+            num_cpus=num_cpus,
+            memory=memory,
             max_retries=max_retries,
             retry_exceptions=retry_exceptions or [ConnectionError, TimeoutError, Exception]
         )
@@ -266,14 +266,14 @@ def pyjob(
                     logging.error(f"Processing failed for item: {e}")
                     continue
             return batch_results
-        
+
         # Submit all batches to Ray workers
         futures = [remote_batch_processor.remote(batch) for batch in batches]
-        
+
         # Monitor memory during processing
         for i in range(0, len(futures), 10):
             _monitor_memory()
-        
+
         # Collect and combine results
         batch_results = ray.get(futures)
         final_results = []
@@ -289,22 +289,22 @@ def pyjob(
                 f"Memory: {initial_mem:.1f}% → {final_mem:.1f}%. "
                 f"Processed: {data_size} → {len(final_results)} items."
             )
-        
+
         return final_results
 
     def _process_dataframe(func: Callable, df: pd.DataFrame) -> Any:
         """Process DataFrame row by row and handle output conversion."""
         logging.info(f"Processing DataFrame with {len(df)} rows.")
-        
+
         # Convert DataFrame to list of Series (rows)
         rows = [df.iloc[i] for i in range(len(df))]
-        
+
         # Process all rows
         processed_rows = _process_batch_with_ray(func, rows)
-        
+
         # Handle output conversion
         result = _handle_output_conversion(processed_rows, output)
-        
+
         logging.info(f"DataFrame processing complete: {len(df)} → {len(result) if hasattr(result, '__len__') else 1} items.")
         return result
 
@@ -312,7 +312,7 @@ def pyjob(
         """Handle memory-efficient database processing."""
         if not db:
             raise ValueError("Database instance must be provided for database mode.")
-        
+
         if not query and not table_name:
             raise ValueError("Either `query` or `table_name` must be provided for database mode.")
 
@@ -334,23 +334,23 @@ def pyjob(
         with SessionLocal() as session:
             # Execute query and fetch results in chunks
             result = session.execute(text(sql_query))
-            
+
             # Convert to list of dictionaries for processing
             columns = result.keys()
             all_rows = []
-            
+
             # Fetch in chunks to manage memory
             chunk_size = _get_optimal_batch_size(1000)  # Default estimate
-            
+
             while True:
                 chunk = result.fetchmany(chunk_size)
                 if not chunk:
                     break
-                
+
                 # Convert rows to dictionaries
                 chunk_dicts = [dict(zip(columns, row)) for row in chunk]
                 all_rows.extend(chunk_dicts)
-                
+
                 # Monitor memory usage
                 if len(all_rows) % (chunk_size * 10) == 0:
                     _monitor_memory()
@@ -360,16 +360,16 @@ def pyjob(
                 return _handle_output_conversion([], output)
 
             logging.info(f"Processing {len(all_rows)} records from database.")
-            
+
             # Process all rows
             all_results = _process_batch_with_ray(func, all_rows)
-            
+
             if enable_monitoring:
                 duration = time.time() - start_time
                 logging.info(f"Database processing completed in {duration:.2f}s.")
-                
+
             return _handle_output_conversion(all_results, output)
-        
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper():
@@ -377,7 +377,7 @@ def pyjob(
             Parameterless execution - all configuration comes from decorator.
             This provides a clean, declarative API where everything is specified upfront.
             """
-            
+
             # Check circuit breaker
             if not _check_circuit_breaker():
                 error_msg = f"Circuit breaker is OPEN for {func.__name__}. Call aborted."
@@ -387,17 +387,17 @@ def pyjob(
             # Determine processing mode and execute
             try:
                 result = None
-                
+
                 # Database Mode
                 if db is not None:
                     logging.info(f"Executing {func.__name__} in DATABASE mode.")
                     result = _process_from_database(func, db=db, query=query, table_name=table_name)
-                
+
                 # DataFrame Mode
                 elif input_df is not None:
                     logging.info(f"Executing {func.__name__} in DATAFRAME mode.")
                     result = _process_dataframe(func, input_df)
-                
+
                 # No valid input specified
                 else:
                     raise ValueError(
@@ -429,22 +429,22 @@ def pyjob(
             'circuit_breaker': wrapper.get_circuit_breaker_status(),
             'monitoring_enabled': enable_monitoring
         }
-        
+
         return wrapper
     return decorator
-        
+
 # this tests are ai generated so we gotta make it better
 if __name__ == "__main__":
     from datetime import datetime
     import os
     from dotenv import load_dotenv
     load_dotenv()
-    
+
     # Your actual database setup
     import datafruit as dft
     from sqlmodel import Field, SQLModel
     from typing import Optional
-    
+
     class users(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
         username: str = Field(unique=True)
@@ -466,7 +466,7 @@ if __name__ == "__main__":
         "top secret stuff",
         [users, posts]
     )
-    
+
     # Sample data
     sample_df = pd.DataFrame({
         'first_name': ['Alice', 'Bob', 'Carol', 'David'],
@@ -475,10 +475,10 @@ if __name__ == "__main__":
         'age': [25, 17, 30, 45],
         'price': [100, 50, 200, 75]
     })
-    
-    print("🚀 Simplified PyJob Decorator - DataFrame and Database Support")
+
+    print("🚀 Simplified parallelized_job Decorator - DataFrame and Database Support")
     print("=" * 70)
-    
+
     # Test database connection
     print("\n🔌 Testing Database Connection...")
     try:
@@ -486,7 +486,7 @@ if __name__ == "__main__":
             print("✅ Database connection successful!")
             postgres_db.sync_schema()  # Ensure tables exist
             print("✅ Schema synchronized!")
-            
+
             # Optional: Add some test data to demonstrate database features
             print("\n💾 Adding Sample Data for Testing...")
             try:
@@ -503,7 +503,7 @@ if __name__ == "__main__":
                         ]
                         for user in sample_users:
                             session.add(user)
-                        
+
                         # Add sample posts
                         sample_posts = [
                             posts(title="Welcome Post", content="This is a welcome post with some content to analyze. It has multiple sentences and words.", published=True),
@@ -512,7 +512,7 @@ if __name__ == "__main__":
                         ]
                         for post in sample_posts:
                             session.add(post)
-                        
+
                         session.commit()
                         print("✅ Sample data added successfully!")
                     else:
@@ -520,19 +520,19 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"⚠️  Could not add sample data: {e}")
                 print("   Database examples will show empty results")
-                
+
         else:
             print("❌ Database connection failed!")
             # Continue with DataFrame examples only
     except Exception as e:
         print(f"❌ Database error: {e}")
         print("   Continuing with DataFrame examples only...")
-    
+
     # Example 0: Simple test - multiply third column by 3
     print("\n🧮 Example 0: Multiply Third Column by 3")
-    @pyjob(
-        input_df=sample_df, 
-        batch_size=2, 
+    @parallelized_job(
+        input_df=sample_df,
+        batch_size=2,
         enable_monitoring=True
     )
     def multiply_third_column_by_3(row):
@@ -540,7 +540,7 @@ if __name__ == "__main__":
         modified_row = row.copy()
         modified_row['score'] = row['score'] * 3  # Third column times 3
         return modified_row
-    
+
     try:
         result = multiply_third_column_by_3()
         print(f"✅ Processed {len(sample_df)} rows → {len(result)} items")
@@ -550,12 +550,12 @@ if __name__ == "__main__":
         print(f"   Sample: {result[0]['first_name']} score: {sample_df.iloc[0]['score']} → {result[0]['score']}")
     except Exception as e:
         print(f"❌ Error: {e}")
-    
+
     # Example 1: DataFrame → Whatever your function returns
     print("\n📊 Example 1: DataFrame Processing")
-    @pyjob(
-        input_df=sample_df, 
-        batch_size=2, 
+    @parallelized_job(
+        input_df=sample_df,
+        batch_size=2,
         enable_monitoring=True
     )
     def clean_dataframe_row(row):
@@ -565,7 +565,7 @@ if __name__ == "__main__":
         cleaned_row['age_group'] = 'adult' if row['age'] >= 18 else 'minor'
         cleaned_row['score_category'] = 'high' if row['score'] > 100 else 'low'
         return cleaned_row
-    
+
     try:
         cleaned_df = clean_dataframe_row()
         print(f"✅ DataFrame processing: {len(sample_df)} → {len(cleaned_df)} items")
@@ -576,10 +576,10 @@ if __name__ == "__main__":
             print(f"   Sample: {cleaned_df[0]}")
     except Exception as e:
         print(f"❌ Error: {e}")
-    
+
     # Example 2: DataFrame → Return dictionaries
     print("\n📋 Example 2: DataFrame → Custom Objects")
-    @pyjob(
+    @parallelized_job(
         input_df=sample_df,
         batch_size=2,
         enable_monitoring=True
@@ -591,7 +591,7 @@ if __name__ == "__main__":
             'performance_level': 'excellent' if row['score'] > 150 else 'good' if row['score'] > 75 else 'needs_improvement',
             'age_category': 'adult' if row['age'] >= 18 else 'minor'
         }
-    
+
     try:
         summary_list = extract_summary_data()
         print(f"✅ DataFrame processing: {len(sample_df)} → {len(summary_list)} items")
@@ -599,10 +599,10 @@ if __name__ == "__main__":
         print(f"   Sample: {summary_list[0]}")
     except Exception as e:
         print(f"❌ Error: {e}")
-    
+
     # Example 3: Database Processing (with table name) - Your actual users table
     print("\n🗄️  Example 3: Database Processing (Your Users Table)")
-    @pyjob(
+    @parallelized_job(
         db=postgres_db,
         table_name="users",
         batch_size=10,
@@ -618,7 +618,7 @@ if __name__ == "__main__":
             'account_age_days': (datetime.utcnow() - user_row['created_at']).days if user_row['created_at'] else 0,
             'status': 'active' if user_row['is_active'] else 'inactive'
         }
-    
+
     try:
         user_analysis = analyze_users_from_table()
         print(f"✅ Database processing: Retrieved and analyzed {len(user_analysis)} users")
@@ -629,10 +629,10 @@ if __name__ == "__main__":
             print(f"   📝 Note: No users found in database - tables may be empty")
     except Exception as e:
         print(f"❌ Error: {e}")
-    
+
     # Example 4: Database Processing (with custom query) - Your posts
     print("\n🔍 Example 4: Database Processing (Your Posts with Custom Query)")
-    @pyjob(
+    @parallelized_job(
         db=postgres_db,
         query="SELECT * FROM posts WHERE published = true ORDER BY created_at DESC LIMIT 100",
         batch_size=5,
@@ -649,7 +649,7 @@ if __name__ == "__main__":
             'category': 'long' if content_length > 1000 else 'medium' if content_length > 500 else 'short',
             'days_since_created': (datetime.utcnow() - post_row['created_at']).days if post_row['created_at'] else 0
         }
-    
+
     try:
         post_analysis = process_published_posts()
         print(f"✅ Database query processing: Analyzed {len(post_analysis)} published posts")
@@ -660,10 +660,10 @@ if __name__ == "__main__":
             print(f"   📝 Note: No published posts found - add some posts to test this feature")
     except Exception as e:
         print(f"❌ Error: {e}")
-        
+
     # Example 5: Database Processing - Get user email domains
     print("\n📧 Example 5: Extract Email Domains from Users")
-    @pyjob(
+    @parallelized_job(
         db=postgres_db,
         query="SELECT id, username, email, full_name FROM users WHERE is_active = true",
         batch_size=20,
@@ -673,7 +673,7 @@ if __name__ == "__main__":
         """Extract email domains and user info."""
         if '@' not in user_row['email']:
             return None  # Skip invalid emails
-            
+
         domain = user_row['email'].split('@')[1].lower()
         return {
             'user_id': user_row['id'],
@@ -682,7 +682,7 @@ if __name__ == "__main__":
             'domain_type': 'gmail' if 'gmail' in domain else 'corporate' if '.' in domain else 'other',
             'has_full_name': bool(user_row['full_name'])
         }
-    
+
     try:
         domain_analysis = extract_user_domains()
         print(f"✅ Email domain extraction: Processed {len(domain_analysis)} active users")
@@ -710,7 +710,7 @@ if __name__ == "__main__":
         ('Database Posts Query', process_published_posts),
         ('Database Email Domains', extract_user_domains),
     ]
-    
+
     for name, func in functions:
         stats = func.get_stats()
         print(f"   {name}: {stats}")
