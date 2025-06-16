@@ -1,9 +1,7 @@
 import pytest
 from datafruit.datafruit import PostgresDB
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel
 from sqlalchemy import Engine, MetaData
-from typing import Optional
-from datetime import datetime
 import json
 import tempfile
 import hashlib

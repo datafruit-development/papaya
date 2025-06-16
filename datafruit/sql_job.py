@@ -73,7 +73,6 @@ if __name__ == "__main__":
     from typing import Optional
     from datetime import datetime, timedelta
     from sqlmodel import Field
-    import os
 
     class users(SQLModel, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
