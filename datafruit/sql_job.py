@@ -15,55 +15,59 @@ The decorator should take the SQLModel input, db, and an optional output table a
 """
 
 def sql_job(db: PostgresDB, output_table: SQLModel | None = None, plan: bool = False):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            sql_query = func(*args, **kwargs)
+   def decorator(func):
+       def wrapper(*args, **kwargs):
+           sql_query = func(*args, **kwargs)
 
-            if not isinstance(sql_query, str):
-                raise ValueError("The function must return a valid SQL query string.")
+           if not isinstance(sql_query, str):
+               raise ValueError("The function must return a valid SQL query string.")
 
-            sql_query = sql_query.strip()
+           sql_query = sql_query.strip()
 
-            def replace_ref(match):
-                model_name = match.group(1)
-                for table_model in db.tables:
-                    if table_model.__name__ == model_name:
-                        return table_model.__tablename__
-                raise ValueError(f"Table model '{model_name}' not found")
+           def replace_ref(match):
+               model_name = match.group(1)
+               for table_model in db.tables:
+                   if table_model.__name__ == model_name:
+                       return table_model.__tablename__
+               raise ValueError(f"Table model '{model_name}' not found")
 
-            sql_query = re.sub(r"\{\{\s*ref\('([^']+)'\)\s*\}\}", replace_ref,  sql_query)
+           sql_query = re.sub(r"\{\{\s*ref\('([^']+)'\)\s*\}\}", replace_ref,  sql_query)
 
-            try:
-                with db.engine.connect() as conn:
-                    inspector = inspect(db.engine)
-                    existing_tables = inspector.get_table_names()
+           try:
+               with db.engine.connect() as conn:
+                   inspector = inspect(db.engine)
+                   existing_tables = inspector.get_table_names()
 
-                    if output_table is None:
-                        # For small result sets or when explicitly requested as DataFrame
-                        result = conn.execute(text(sql_query))
-                        df = pd.DataFrame(result.fetchall(), columns=result.keys())
-                        return df
-                    else:
-                        # Direct INSERT INTO ... SELECT approach
-                        if output_table.__tablename__ not in existing_tables:
-                            db.create_table_from_model(output_table)
-                            print("Created table:", output_table.__tablename__)
+                   if output_table is None:
+                       # Return as DataFrame
+                       result = conn.execute(text(sql_query))
+                       df = pd.DataFrame(result.fetchall(), columns=result.keys())
+                       return df
+                   else:
+                       # Create output table if it doesn't exist
+                       if output_table.__tablename__ not in existing_tables:
+                           output_table.metadata.create_all(db.engine, tables=[output_table.__table__])
 
-                        # Direct database-to-database operation
-                        # This doesn't really work properly - we should move to views and remove this
-                        insert_query = f"INSERT INTO {output_table.__tablename__} ({sql_query})"
+                       # Get all non-primary key columns (since primary keys are usually auto-increment)
+                       columns = [col.name for col in output_table.__table__.columns if not col.primary_key]
 
-                        result = conn.execute(text(insert_query))
-                        conn.commit()
+                       if columns:
+                           column_list = ", ".join(columns)
+                           insert_query = f"INSERT INTO {output_table.__tablename__} ({column_list}) {sql_query}"
+                       else:
+                           # If no non-primary key columns, just insert without specifying columns
+                           insert_query = f"INSERT INTO {output_table.__tablename__} {sql_query}"
 
-                        return f"Inserted {result.rowcount} rows into {output_table.__tablename__}"
+                       result = conn.execute(text(insert_query))
+                       conn.commit()
 
-            except SQLAlchemyError as e:
-                raise RuntimeError(f"Database error: {str(e)}")
+                       return f"Inserted {result.rowcount} rows into {output_table.__tablename__}"
 
-        return wrapper
-    return decorator
+           except SQLAlchemyError as e:
+               raise RuntimeError(f"Database error: {str(e)}")
 
+       return wrapper
+   return decorator
 
 if __name__ == "__main__":
     from typing import Optional
