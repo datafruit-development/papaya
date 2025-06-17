@@ -1,5 +1,4 @@
-from sqlmodel import SQLModel
-from datafruit import PostgresDB
+from datafruit import PostgresDB, Table
 from sqlalchemy import text, inspect
 import pandas as pd
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,11 +9,11 @@ Principles
 
 This first iteration should just work as a sql query. The function should return a string that is a valid SQL query and reference the tables directly.
 The function should be decorated with @sql_job.
-The decorator should take the SQLModel input, db, and an optional output table as parameters. If no output table is provided, it should default to outputting as a dataframe.
+The decorator should take the datafruit table input, db, and an optional output table as parameters. If no output table is provided, it should default to outputting as a dataframe.
 
 """
 
-def sql_job(db: PostgresDB, output_table: SQLModel | None = None, plan: bool = False):
+def sql_job(db: PostgresDB, output_table: Table | None = None, plan: bool = False):
    def decorator(func):
        def wrapper(*args, **kwargs):
            sql_query = func(*args, **kwargs)
@@ -74,7 +73,7 @@ if __name__ == "__main__":
     from datetime import datetime, timedelta
     from sqlmodel import Field
 
-    class users(SQLModel, table=True):
+    class users(Table, table=True):
         id: Optional[int] = Field(default=None, primary_key=True)
         username: str = Field(unique=True)
         email: str = Field(unique=True)
@@ -117,7 +116,7 @@ if __name__ == "__main__":
                 conn.execute(stmt)
 
                 trans.commit()
-                print(f"Successfully inserted {len(dummy_users_data)} users using SQLModel table!")
+                print(f"Successfully inserted {len(dummy_users_data)} users using datafruit table!")
 
             except Exception as e:
                 trans.rollback()

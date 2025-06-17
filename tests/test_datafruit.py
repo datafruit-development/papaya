@@ -1,6 +1,6 @@
 import pytest
-from datafruit.datafruit import PostgresDB
-from sqlmodel import SQLModel
+from datafruit.database import PostgresDB
+from datafruit import Table
 from sqlalchemy import Engine, MetaData
 import json
 import tempfile
@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import datafruit.cli as cli_module
 from datafruit.dummy_models import TestUser, TestPost, TestProfile, TestComplexModel
+from sqlglot.errors import ParseError
 
 # =============================================================================
 # Fixtures
@@ -57,9 +58,9 @@ def mock_dft_dir(temp_dir):
 @pytest.fixture
 def sample_schema_content():
     return '''import datafruit as dft
-from sqlmodel import Field, SQLModel
+from datafruit import Field, Table 
 
-class TestUserSample(SQLModel, table=True):
+class TestUserSample(Table, table=True):
     __tablename__ = "test_users_sample"
     id: int = Field(primary_key=True)
     name: str
@@ -75,14 +76,14 @@ def temp_project_dir():
         yield project_dir
 
 @pytest.fixture(autouse=True)
-def cleanup_sqlmodel_registry():
-    """Clean up SQLModel registry between tests to avoid conflicts."""
+def cleanup_table_registry():
+    """Clean up Table registry between tests to avoid conflicts."""
     yield
     try:
-        if hasattr(SQLModel, 'registry') and hasattr(SQLModel.registry, '_class_registry'):
-            SQLModel.registry._class_registry.clear()
-        if hasattr(SQLModel, 'metadata'):
-            SQLModel.metadata.clear()
+        if hasattr(Table, 'registry') and hasattr(Table.registry, '_class_registry'):
+            Table.registry._class_registry.clear()
+        if hasattr(Table, 'metadata'):
+            Table.metadata.clear()
     except Exception:
         pass
 
@@ -138,10 +139,10 @@ class TestSchemaConfigurationParsing:
     def test_load_valid_schema_configuration(self, temp_dir, postgresql_db_conn_str):
         """Test loading a valid declarative schema file"""
         schema_content = f'''import datafruit as dft
-from sqlmodel import Field, SQLModel
+from datafruit import Field, Table 
 from typing import Optional
 
-class TestUserConfig(SQLModel, table=True):
+class TestUserConfig(Table, table=True):
     __tablename__ = "test_users_config"
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(unique=True)
@@ -160,9 +161,9 @@ dft.export([db])
     def test_invalid_schema_configuration_syntax_error(self, temp_dir):
         """Test handling of invalid Python syntax in schema file"""
         invalid_schema = '''import datafruit as dft
-from sqlmodel import SQLModel, Field
+from datafruit import Table, Field
 
-class TestUserInvalid(SQLModel, table=True)
+class TestUserInvalid(Table, table=True)
     __tablename__ = "test_users_invalid"
     id: int = Field(primary_key=True)
 '''
@@ -175,9 +176,9 @@ class TestUserInvalid(SQLModel, table=True)
     def test_schema_configuration_missing_export(self, temp_dir, postgresql_db_conn_str):
         """Test schema file that doesn't call dft.export()"""
         schema_content = f'''import datafruit as dft
-from sqlmodel import Field, SQLModel
+from datafruit import Field, Table 
 
-class TestUserNoExport(SQLModel, table=True):
+class TestUserNoExport(Table, table=True):
     __tablename__ = "test_users_no_export"
     id: int = Field(primary_key=True)
 
@@ -363,7 +364,7 @@ class TestCLIInterface:
 
         content = dft_file.read_text()
         assert "import datafruit as dft" in content
-        assert "SQLModel" in content
+        assert "Table" in content
 
     def test_cli_project_name_validation(self):
         """Test project name validation rules"""
@@ -560,8 +561,8 @@ class TestSQLExecutionIntegration:
         assert result is not None
 
     def test_execute_sql_with_invalid_sql(self, db_instance):
-        result = db_instance.execute_sql("INVALID SQL STATEMENT")
-        assert result is None
+        with pytest.raises(ParseError):
+            db_instance.execute_sql("INVALID SQL STATEMENT")
 
     def test_get_table_info_all_tables(self, db_instance):
         result = db_instance.get_table_info()

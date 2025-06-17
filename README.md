@@ -15,18 +15,18 @@ pip install datafruit
 
 ### 2. Define Your Data Models
 
-In your Python code, import Datafruit and SQLModel. Declare models as classes:
+In your Python code, import Datafruit. Declare models as classes:
 
 ```python
 import datafruit as dft
+from datafruit import Table, Field
 import os
-from sqlmodel import Field, SQLModel
 from dotenv import load_dotenv
 from typing import Optional
 from datetime import datetime
 load_dotenv()
 
-class users(SQLModel, table=True):
+class users(Table, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(unique=True)
     email: str = Field(unique=True)
@@ -34,7 +34,7 @@ class users(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class posts(SQLModel, table=True):
+class posts(Table, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(index=True)
     content: str

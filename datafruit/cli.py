@@ -12,14 +12,14 @@ from typing import List, Dict, Any, Tuple
 
 DEFAULT_FILE = """import datafruit as dft
 import os
-from sqlmodel import Field, SQLModel
+from datafruit import Field, SQLModel
 from dotenv import load_dotenv
 from typing import Optional
 from datetime import datetime
 
 load_dotenv()
 
-class User(SQLModel, table=True):
+class User(Table, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(unique=True)
     email: str = Field(unique=True)
@@ -27,7 +27,7 @@ class User(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class Post(SQLModel, table=True):
+class Post(Table, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(index=True)
     content: str
