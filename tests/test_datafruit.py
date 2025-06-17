@@ -1,5 +1,5 @@
 import pytest
-from datafruit.datafruit import PostgresDB
+from datafruit.database import PostgresDB
 from sqlmodel import SQLModel
 from sqlalchemy import Engine, MetaData
 import json
