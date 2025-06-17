@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import datafruit.cli as cli_module
 from datafruit.dummy_models import TestUser, TestPost, TestProfile, TestComplexModel
+from sqlglot.errors import ParseError
 
 # =============================================================================
 # Fixtures
@@ -560,8 +561,8 @@ class TestSQLExecutionIntegration:
         assert result is not None
 
     def test_execute_sql_with_invalid_sql(self, db_instance):
-        result = db_instance.execute_sql("INVALID SQL STATEMENT")
-        assert result is None
+        with pytest.raises(ParseError):
+            db_instance.execute_sql("INVALID SQL STATEMENT")
 
     def test_get_table_info_all_tables(self, db_instance):
         result = db_instance.get_table_info()
