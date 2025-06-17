@@ -5,10 +5,8 @@ from alembic.migration import MigrationContext
 from alembic.autogenerate import produce_migrations, render_python_code, compare_metadata
 from alembic.operations import Operations
 from typing import Optional
-from datetime import datetime
 import sqlglot
 from sqlmodel import SQLModel as Table
-from sqlmodel import Field
 
 class Database:
     def __init__(self, connection_string: str, tables: list[type[Table]]):
