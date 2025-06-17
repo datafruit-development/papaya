@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 from datafruit import PostgresDB
-from datafruit.sql_job import sql_job
+from datafruit.model.sql_model import sql_job
 from datafruit.dummy_models import TestUser, TestOutput
 
 # This fixture uses pytest_postgresql to create a PostgreSQL database for testing.

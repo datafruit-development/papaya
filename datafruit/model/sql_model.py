@@ -4,6 +4,24 @@ from sqlalchemy import text, inspect
 import pandas as pd
 from sqlalchemy.exc import SQLAlchemyError
 import re
+from sqlglot import parse_one
+from sqlglot.expressions import Expression
+from typing import Self, Any
+
+class Model:
+    """Represents a SQL model."""
+    def __init__(self, name: str, query_sql: str, dependencies: set[str], schema: Self):
+        self.name = name
+        self._query_sql = query_sql
+        self.depends_on = dependencies
+        self.schema = schema
+
+    def render_query(self, **kwargs: Any) -> Expression:
+        return parse_one(self._query_sql)
+
+class Context:
+    def __init__(self):
+        self._models: dict[str, Model] = {}
 
 """
 Principles
