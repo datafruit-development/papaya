@@ -112,10 +112,10 @@ The most straightforward way to use `@parallelized_job` is to insert data row by
 ```python
 import pandas as pd
 from datafruit import dft
-from sqlmodel import SQLModel
+from datafruit import Table
 
 # Define Pydantic model for cleaned user data
-class CleanUser(SQLModel):
+class CleanUser(Table):
     name: str
     email: str
 

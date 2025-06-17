@@ -1,8 +1,8 @@
-from sqlmodel import SQLModel, Field
+from datafruit import Table, Field
 from typing import Optional
 from datetime import datetime
 
-class TestUser(SQLModel, table=True):
+class TestUser(Table, table=True):
     __tablename__ = "test_users"
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(unique=True)
@@ -11,12 +11,12 @@ class TestUser(SQLModel, table=True):
     is_active: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-class TestOutput(SQLModel, table=True):
+class TestOutput(Table, table=True):
     __tablename__ = "test_output"
     id: Optional[int] = Field(default=None, primary_key=True)
     count_value: int
 
-class TestPost(SQLModel, table=True):
+class TestPost(Table, table=True):
     __tablename__ = "test_posts"
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = Field(index=True)
@@ -25,14 +25,14 @@ class TestPost(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: Optional[datetime] = None
 
-class TestProfile(SQLModel, table=True):
+class TestProfile(Table, table=True):
     __tablename__ = "test_profiles"
     id: Optional[int] = Field(default=None, primary_key=True)
     bio: str
     age: int
     salary: Optional[float] = None
 
-class TestComplexModel(SQLModel, table=True):
+class TestComplexModel(Table, table=True):
     __tablename__ = "test_complex"
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(max_length=100)

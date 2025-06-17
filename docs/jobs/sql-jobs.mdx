@@ -11,11 +11,11 @@ The `@sql_job` decorator allows you to define data transformations as Python fun
 
 The simplest way to use `@sql_job` is to execute a query and get the results back as a Pandas DataFrame. This is useful for exploration, analysis, or as an input to a subsequent Python job.
 
-To reference a table you've defined with `SQLModel`, use the `{{ ref('ModelName') }}` syntax, similar to dbt.
+To reference a table you've defined with `Table`, use the `{{ ref('ModelName') }}` syntax, similar to dbt.
 
 ```python
 import datafruit as dft
-from sqlmodel import Field, SQLModel
+from datafruit import Field, Table 
 from dotenv import load_dotenv
 import os
 from typing import Optional
@@ -24,7 +24,7 @@ import pandas as pd
 load_dotenv()
 
 # Assume 'users' model is defined as in the Quickstart guide
-class users(SQLModel, table=True):
+class users(Table, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(unique=True)
     email: str = Field(unique=True)
@@ -48,11 +48,11 @@ When you run this script, ` get_active_users()` will execute the query against y
 Materializing Results: Query to Table
 For production pipelines, you often want to save the results of a transformation back to the database. You can do this by providing an output_table to the decorator.
 
-Datafruit will automatically create the output table if it doesn't exist, based on the SQLModel you provide.
+Datafruit will automatically create the output table if it doesn't exist, based on the Table you provide.
 
 ```python
 import datafruit as dft
-from sqlmodel import Field, SQLModel
+from datafruit import Field, Table 
 from dotenv import load_dotenv
 import os
 from typing import Optional
@@ -60,13 +60,13 @@ from datetime import datetime
 load_dotenv()
 
 # Define models for input and output
-class users(SQLModel, table=True):
+class users(Table, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(unique=True)
     email: str = Field(unique=True)
     is_active: bool = Field(default=True)
 
-class active_user_report(SQLModel, table=True):
+class active_user_report(Table, table=True):
     active_user_count: int
 
 # Configure the database with both models
@@ -93,7 +93,7 @@ The PostgresDB instance to run the query against.
 
 ### output_table
 
-The SQLModel class representing the destination table. If provided, results are inserted into this table. If None, results are returned as a DataFrame.
+The Table class representing the destination table. If provided, results are inserted into this table. If None, results are returned as a DataFrame.
 
 
 

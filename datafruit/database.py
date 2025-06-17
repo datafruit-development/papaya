@@ -6,11 +6,12 @@ from alembic.autogenerate import produce_migrations, render_python_code, compare
 from alembic.operations import Operations
 from typing import Optional
 from datetime import datetime
-from sqlmodel import SQLModel
 import sqlglot
+from sqlmodel import SQLModel as Table
+from sqlmodel import Field
 
 class Database:
-    def __init__(self, connection_string: str, tables: list[type[SQLModel]]):
+    def __init__(self, connection_string: str, tables: list[type[Table]]):
         self.connection_string = connection_string
         self.tables = tables
         self.engine = self._create_engine()
@@ -143,7 +144,7 @@ class Database:
             return []
 
 class PostgresDB(Database):
-    def __init__(self, connection_string: str, tables: list[type[SQLModel]]):
+    def __init__(self, connection_string: str, tables: list[type[Table]]):
         super().__init__(connection_string, tables)
 
     def get_version(self) -> Optional[str]:
@@ -156,5 +157,5 @@ class PostgresDB(Database):
             return None
     
     def execute_sql(self, sql: str, args: Optional[dict] = None):
-        sql = sqlglot.transpile(sql, write="hive")[0]
+        sql = sqlglot.transpile(sql, write="postgres")[0]
         return super().execute_sql(sql, args)

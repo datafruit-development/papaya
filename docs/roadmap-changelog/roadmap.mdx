@@ -33,11 +33,11 @@ Stay up to date with our latest developments and upcoming features. This roadmap
 
       ```python
       # Required imports at the top of your dft.py
-      from sqlmodel import SQLModel, Field
+      from datafruit import Table, Field
       from typing import Optional
       from datetime import datetime
       
-      class User(SQLModel, table=True):
+      class User(Table, table=True):
           id: Optional[int] = Field(default=None, primary_key=True)
           username: str = Field(unique=True)
           email: str = Field(unique=True)
