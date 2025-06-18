@@ -3,20 +3,19 @@ title: "Developer Quick Start"
 description: "Datafruit is a pythonic data transformation framework that brings declarative configuration to your data pipelines."
 ---
 
-## Installation
+## ✅ Installation
 
 ```bash
 pip install datafruit
 ```
 
-## Step 1: Define Your Base Schema
+## Step 1: Define Base Tables
 
-First, let's create a simple project with just base tables and no transformations.
+Create a simple schema using Python classes. This file isn’t executed—just declarative config.
 
 ```python
 # models.py
 import datafruit as dft
-
 from typing import Optional
 
 class users(dft.Table):
@@ -25,26 +24,24 @@ class users(dft.Table):
     email: str
     is_active: bool = True
 
-class orders(dft.Table, table=True):
+class orders(dft.Table):
     id: Optional[int] = dft.Field(primary_key=True)
     user_id: int = dft.Field(foreign_key="users.id")
     amount: float
     status: str = "pending"
 
-# Connect to your database
-db = dft.PostgresDB("postgresql://localhost/mydb", tables=[users, orders])
+databases = {
+    "warehouse": dft.PostgresDB("postgresql://localhost/warehouse", tables=[users, orders])
+}
 
-# Export configuration
-dft.export([db])
+dft.export(databases=databases)
 ```
-
-Let's see what this creates:
 
 ```bash
 $ dft plan
 
 Planning schema changes...
-Found 1 exported database(s)
+Target: warehouse
 
 Datafruit will perform the following actions:
 
@@ -61,98 +58,78 @@ Datafruit will perform the following actions:
 │ + Add column is_active (BOOLEAN)
 
 ✓ Plan saved to .dft/plan.json
-Plan expires in 10 minutes.
 Run 'dft apply' to apply these changes.
+```
 
+```bash
 $ dft apply
 
 Applying schema changes...
-✓ Successfully applied changes to 'postgresql://localhost/mydb'
-✓ All changes applied successfully!
-
+✓ Successfully applied changes to 'warehouse'
 ```
 
-Great! Now you have your base tables created.
+---
 
-## Step 2: Add Data Transformations
+## Step 2: Add Views and Models with `@query`
 
-Now let's add some queries to transform our data. We'll add a new schema for storing results:
+Use `@query(db=..., type="")` to define transformations:
+
+| materialization type | meaning                             |
+| -------------------- | ----------------------------------- |
+| view                 | Stored as a SQL view                |
+| table                | Materialized and written to a table |
 
 ```python
-# models.py (updated)
-import datafruit as dft
-from typing import Optional
+# models.py (continued)
+db = databases["warehouse"]
 
-# Base tables
-class users(dft.Table):
-    id: Optional[int] = dft.Field(primary_key=True)
-    name: str
-    email: str
-    is_active: bool = True
+@dft.query(db=db, type="view")
+def active_users():
+    return f"SELECT * FROM {users} WHERE is_active = true"
 
-class orders(dft.Table):
-    id: Optional[int] = dft.Field(primary_key=True)
-    user_id: int = dft.Field(foreign_key="users.id")
-    amount: float
-    status: str = "pending"
+@dft.query(db=db, type="view")
+def completed_orders():
+    return f"""
+    SELECT * FROM {orders}
+    WHERE status = 'completed' AND amount > 0
+    """
 
-# NEW: Schema for our analytics table
+@dft.query(db=db, type="table")
+def user_stats():
+    return f"""
+    SELECT 
+        u.id AS user_id,
+        COUNT(o.id) AS total_orders,
+        SUM(o.amount) AS total_spent,
+        AVG(o.amount) AS avg_order_value
+    FROM {active_users} u
+    LEFT JOIN {completed_orders} o ON u.id = o.user_id
+    GROUP BY u.id
+    """
+```
+
+And define the table schema for `user_stats`:
+
+```python
 class user_stats(dft.Table):
     user_id: int = dft.Field(primary_key=True)
     total_orders: int
     total_spent: float
     avg_order_value: float
-
-# Database connection
-db = dft.PostgresDB(
-    "postgresql://localhost/mydb", 
-    tables=[users, orders, user_stats]  # Added user_stats
-)
-
-# NEW: Data transformations
-
-@dft.query(db=db)  # View - not saved to database
-def active_users():
-    """Filter to only active users."""
-    return f"SELECT * FROM {dft.ref(users)} WHERE is_active = true"
-
-@dft.query(db=db)  # View - not saved to database
-def completed_orders():
-    """Filter to completed orders only."""
-    return f"""
-    SELECT * FROM {dft.ref(orders)} 
-    WHERE status = 'completed' AND amount > 0
-    """
-
-@dft.query(db=db)  # Persistent - saved as table because user_stats schema exists
-def user_stats():
-    """Calculate user statistics."""
-    return f"""
-    SELECT 
-        u.id as user_id,
-        COUNT(o.id) as total_orders,
-        SUM(o.amount) as total_spent,
-        AVG(o.amount) as avg_order_value
-    FROM {dft.ref(active_users)} u
-    LEFT JOIN {dft.ref(completed_orders)} o ON u.id = o.user_id
-    GROUP BY u.id
-    """
-
-# Export
-dft.export([db])
-
 ```
 
-Let's see what changes:
+---
+
+## Step 3: Plan, Apply, Run
 
 ```bash
 $ dft plan
 
 Planning schema changes...
-Found 1 exported database(s)
+Target: warehouse
 
-Datafruit will perform the following actions:
-
++ View: active_users
++ View: completed_orders
 + Table: user_stats
 │ + Add column user_id (INTEGER)
 │ + Add column total_orders (INTEGER)
@@ -160,136 +137,79 @@ Datafruit will perform the following actions:
 │ + Add column avg_order_value (FLOAT)
 
 ✓ Plan saved to .dft/plan.json
-Plan expires in 10 minutes.
-Run 'dft apply' to apply these changes.
+```
 
+```bash
 $ dft apply
 
 Applying schema changes...
-✓ Successfully applied changes to 'postgresql://localhost/mydb'
-✓ All changes applied successfully!
-
+✓ Created views: active_users, completed_orders
+✓ Created table: user_stats
+✓ Schema synced
 ```
-
-Now run the transformations:
 
 ```bash
-$ dft run
-Executing: user_stats
-WITH active_users AS (
-  SELECT * FROM users WHERE is_active = true
-),
-completed_orders AS (
-  SELECT * FROM orders WHERE status = 'completed' AND amount > 0
-)
-INSERT INTO user_stats 
-SELECT u.id, COUNT(o.id), SUM(o.amount), AVG(o.amount)
-FROM active_users u
-LEFT JOIN completed_orders o ON u.id = o.user_id
-GROUP BY u.id
+$ dft run user_stats
+
+→ Executing DAG:
+   • active_users (view)
+   • completed_orders (view)
+   • user_stats (table)
 
 ✓ user_stats completed (1,247 rows)
-
+✓ Data written to table: user_stats
 ```
 
-## Step 3: Breaking Schema Changes
+---
 
-Now let's say we want to add a new column to track when stats were calculated. This is a **breaking change** because existing data doesn't have this column.
+## 🧠 Auto-Suggest Missing Schema
 
-```python
-# models.py (with breaking change)
-import datafruit as dft
-from typing import Optional
-from datetime import datetime
+If you forget the `user_stats` class:
 
-# ... base tables same as before ...
+```bash
+$ dft plan
 
-# BREAKING CHANGE: Added new required column
+✓ Computation graph valid
+
+⚠️ Table 'user_stats' is declared as persistent, but has no schema defined.
+
+Suggested schema:
+
 class user_stats(dft.Table):
     user_id: int = dft.Field(primary_key=True)
     total_orders: int
     total_spent: float
     avg_order_value: float
-    calculated_at: datetime  # NEW: This breaks existing data!
 
-# ... rest same as before ...
-
-@dft.query(db=db)
-def user_stats():
-    """Calculate user statistics with timestamp."""
-    return f"""
-    SELECT 
-        u.id as user_id,
-        COUNT(o.id) as total_orders,
-        SUM(o.amount) as total_spent,
-        AVG(o.amount) as avg_order_value,
-        CURRENT_TIMESTAMP as calculated_at  -- NEW
-    FROM {dft.ref(active_users)} u
-    LEFT JOIN {dft.ref(completed_orders)} o ON u.id = o.user_id
-    GROUP BY u.id
-    """
-
+Add this to your models and re-run:
+  dft plan
+  dft apply
 ```
 
-DFT detects this is a breaking change:
+---
 
-```bash
-$ dft plan
-Plan: 0 to add, 1 to change, 0 to destroy
+## 🛑 Safe by Default: Detecting Breakage
 
-~ user_stats (table) - BREAKING CHANGE
-  + calculated_at: TIMESTAMP NOT NULL  (new required column)
-
-⚠️  WARNING: This change requires data migration
-   - New column 'calculated_at' is NOT NULL but existing rows have no value
-   - This will DROP and RECREATE the table, losing existing data
-   - Consider making the column optional or providing a default value
-
-To proceed anyway: dft apply --force
-To make it safe: Add default value or make column optional
-
-```
-
-Let's fix it by making the column optional with a default:
+If you rename a column in `users`:
 
 ```python
-# models.py (safe change)
-class user_stats(dft.Table, table=True):
-    user_id: int = dft.Field(primary_key=True)
-    total_orders: int
-    total_spent: float
-    avg_order_value: float
-    calculated_at: Optional[datetime] = dft.Field(default_factory=datetime.utcnow)
-
+class users(dft.Table):
+    id: Optional[int] = dft.Field(primary_key=True)
+    name: str
+    email_address: str  # renamed from 'email'
+    is_active: bool = True
 ```
-
-Now it's a safe migration:
 
 ```bash
 $ dft plan
-Plan: 0 to add, 1 to change, 0 to destroy
 
-~ user_stats (table)
-  + calculated_at: TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+~ Table: users
+│ ~ Rename: email → email_address
 
-✓ Safe migration: New column has default value
+BREAKING CHANGE DETECTED:
 
-$ dft apply
-Altering table user_stats... ✓
-  - Added column calculated_at with default value
+× View 'active_users' references users.email
+× Query 'user_stats' depends on active_users
 
-Apply complete! 0 added, 1 changed, 0 destroyed.
-
+Fix downstream queries before applying.
 ```
-
-## Summary
-
-DFT gives you:
-
--   **Type-safe schemas** with `dft.Table` and `dft.Field`
--   **Persistent queries** (saved as tables when schema exists)
--   **Pythonic references** with `dft.ref()`
--   **Safe migrations** with breaking change detection
--   **Plan/apply workflow** to review changes before applying
-
-Your data transformations are now code, with all the benefits of version control, testing, and IDE support.
