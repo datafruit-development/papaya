@@ -1,0 +1,35 @@
+---
+description: "datafruit supports dbt-style transformations in the form of queries"
+title: "Transformations and Queries "
+---
+
+First, define your tables, database, and any 
+
+```python
+import datafruit as dft 
+from datafruit import Table, Field
+from typing import Optional
+
+# Base table schema
+class users(Table):
+    id: Optional[int] = Field(primary_key=True)
+    name: str
+    email: str
+    is_active: bool = True
+
+# Database connection  
+db = dft.PostgresDB("postgresql://localhost/mydb", tables=[users])
+
+# Ephemeral query (just a view saved, data not saved in the database)
+@dft.query(db=db)
+def active_users():
+    return f"SELECT * FROM {dft.ref(users)} WHERE is_active = true"
+
+# Persistent query (saved as table because we want the results stored)
+@dft.query(db=db, materialization="table") 
+def user_count():
+    return f"SELECT COUNT(*) as total FROM {dft.ref(active_users)}"
+
+# Export
+dft.export([db])
+```

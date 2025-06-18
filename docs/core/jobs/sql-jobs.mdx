@@ -6,7 +6,6 @@ icon: "database"
 
 The `@sql_job` decorator allows you to define data transformations as Python functions that return SQL queries. Datafruit handles the execution and materialization of these queries, allowing you to build complex data pipelines with simple, version-controlled SQL.
 
-
 ## Basic Usage: Query to DataFrame
 
 The simplest way to use `@sql_job` is to execute a query and get the results back as a Pandas DataFrame. This is useful for exploration, analysis, or as an input to a subsequent Python job.
@@ -40,7 +39,6 @@ dft.export([db])
 def get_active_users():
     """Returns a count of active users."""
     return "SELECT COUNT(*) as active_user_count FROM {{ ref('users') }} WHERE is_active = true"
-
 ```
 
 When you run this script, ` get_active_users()` will execute the query against your database and `active_users_df` will be a Pandas DataFrame containing the result.
@@ -81,8 +79,8 @@ dft.export([db])
 def create_active_user_report():
     """Counts active users and saves the result to the 'active_user_report' table."""
     return "SELECT COUNT(*) as active_user_count FROM {{ ref('users') }} WHERE is_active = true"
-
 ```
+
 When this job runs, it performs an `INSERT INTO active_user_report SELECT ...` operation, materializing the results directly in your database and returning a status message.
 
 ## Decorator Parameters
@@ -95,18 +93,13 @@ The PostgresDB instance to run the query against.
 
 The Table class representing the destination table. If provided, results are inserted into this table. If None, results are returned as a DataFrame.
 
-
-
 ## Handling Schema Changes
 
 When you modify your schema in a way that affects the requirements of your SQL job (e.g., renaming or removing columns/tables used in your queries), you'll need to update your job accordingly. Here's what happens:
 
 1. **Schema Changes Detected**: When you run `dft plan`, Datafruit will detect any schema changes that might affect your jobs.
-
 2. **Job Validation**: Before executing `dft run`, Datafruit will validate that all tables and columns referenced in your SQL queries exist in the current schema.
-
 3. **Error Handling**: If a job references a column or table that no longer exists, the job will fail with a clear error message indicating what's missing.
-
 4. **Updating Jobs**: To fix the job:
    - Update your SQL query to reference the correct tables/columns
    - Run `dft plan` to verify the changes
@@ -114,6 +107,7 @@ When you modify your schema in a way that affects the requirements of your SQL j
    - Run your job with `dft run job_name`
 
 Example of a breaking change:
+
 ```python
 # Old query (before schema change)
 """SELECT username, email FROM {{ ref('users') }}"""
